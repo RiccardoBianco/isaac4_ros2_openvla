@@ -1,0 +1,67 @@
+# === ROS 2 build artifacts ===
+humble_ws/build/
+humble_ws/install/
+humble_ws/log/
+
+# === Isaac Sim workspace ===
+isaac_ws/build/
+isaac_ws/install/
+isaac_ws/log/
+
+# Colcon meta info
+.colcon/
+.colcon_install_layout
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.egg
+env/
+venv/
+.venv/
+
+# Editor config (VSCode, PyCharm, ecc.)
+.vscode/
+.idea/
+
+# Backup & temp files
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+
+# macOS & Windows trash
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Compilati e oggetti binari
+*.out
+*.o
+*.a
+*.so
+*.dll
+*.exe
+
+# Log e debug
+*.log
+*.valgrind*
+
+# === Isaac Sim cache / nucleus ===
+.omni/
+exts/
+.cache/
+__cache__/
+
+# === ROS bag files ===
+*.db3
+*.bag
+*.bag.active
+*.bag.*
