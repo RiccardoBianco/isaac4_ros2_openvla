@@ -65,3 +65,7 @@ __cache__/
 *.bag
 *.bag.active
 *.bag.*
+
+
+# === Output Folder ===
+output/
