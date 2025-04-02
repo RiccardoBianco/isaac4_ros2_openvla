@@ -34,7 +34,7 @@ def send_request(image_path: str, instruction: str, unnorm_key: str):
 
 if __name__ == "__main__":
     # Define the image path and instruction
-    image_path = "im_0.jpg"
+    image_path = "openvla/im_0.jpg"
     instruction = "pick up the object"
 
     # Select an appropriate unnorm_key from the available dataset options

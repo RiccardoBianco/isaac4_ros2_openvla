@@ -101,16 +101,7 @@ class OpenVLAServer:
 
             #New
             # Save image in .jpg format
-            image_pil = Image.fromarray(image).convert("RGB")
-            image_filename = "received_image.jpg"
-            image_path = os.path.join("path_to_save_images", image_filename)
-            
-            # Ensure the directory exists
-            os.makedirs(os.path.dirname(image_path), exist_ok=True)
-
-            # Save the image
-            image_pil.save(image_path, "JPEG")
-            print(f"Image saved as {image_path}")
+            save_image_with_progressive_filename(image, reset_folder=False)
 
             # Run VLA Inference
             prompt = get_openvla_prompt(instruction, self.openvla_path)
@@ -137,6 +128,56 @@ class OpenVLAServer:
         print("The server is running.... Waiting for post requests")
 
 
+def save_image_with_progressive_filename(image, image_directory="path_to_save_images", base_filename="received_image", extension=".jpg", reset_folder=False):
+    """
+    Saves an image with a progressively higher filename.
+    Optionally resets the folder (deletes all previous images).
+
+    Parameters:
+    - image: The image data (numpy array) to save.
+    - image_directory: Directory to save the images (default is "path_to_save_images").
+    - base_filename: Base name for the image files (default is "received_image").
+    - extension: File extension (default is ".jpg").
+    - reset_folder: If True, deletes all existing images in the folder before saving (default is False).
+    """
+    # Reset the folder by deleting existing images if specified
+    if reset_folder:
+        for file in os.listdir(image_directory):
+            if file.startswith(base_filename) and file.endswith(extension):
+                os.remove(os.path.join(image_directory, file))
+
+    # Find the highest number in existing filenames
+    existing_files = [f for f in os.listdir(image_directory) if f.startswith(base_filename) and f.endswith(extension)]
+
+    # Find the highest index by extracting the numbers from the filenames
+    max_index = 0
+    for filename in existing_files:
+        try:
+            # Extract the number from filenames like 'received_image_1.jpg', 'received_image_2.jpg', etc.
+            index = int(filename[len(base_filename)+1:-len(extension)])
+            if index > max_index:
+                max_index = index
+        except ValueError:
+            # In case there's a filename that doesn't have the expected format, we skip it
+            continue
+
+    # Create the new filename by incrementing the highest index
+    new_index = max_index + 1
+    image_filename = f"{base_filename}_{new_index}{extension}"
+
+    # Save the image with the new filename
+    image_pil = Image.fromarray(image).convert("RGB")
+    image_path = os.path.join(image_directory, image_filename)
+    image_pil.save(image_path)
+
+    print(f"Image saved as: {image_filename}")
+    return image_filename
+
+def clear_img_folder():
+    for file in os.listdir("path_to_save_images"):
+            if file.startswith("received_image") and file.endswith(".jpg"):
+                os.remove(os.path.join("path_to_save_images", file))
+
 @dataclass
 class DeployConfig:
     # fmt: off
@@ -151,6 +192,7 @@ class DeployConfig:
 
 @draccus.wrap()
 def deploy(cfg: DeployConfig) -> None:
+    clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
     server.run(cfg.host, port=cfg.port)
 
