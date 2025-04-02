@@ -1,87 +1,146 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, JointState
+from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge
 import cv2
 import requests
 import numpy as np
 import time
+from scipy.spatial.transform import Rotation as R
+from PIL import Image as PILImage
+import json_numpy
 
-class ImageToJointsClient(Node):
+json_numpy.patch()
+
+class ImageToPoseClient(Node):
     def __init__(self):
-        super().__init__('image_to_joints_client')
+        super().__init__('image_to_pose_client')
 
-        # Init CV Bridge
+        # CV bridge
         self.bridge = CvBridge()
 
-        # Image subscriber
+        # Subscriber immagini
         self.subscription = self.create_subscription(
             Image,
             '/rgb',
             self.image_callback,
-            10)
+            10
+        )
 
-        # Joint command publisher
-        self.publisher_ = self.create_publisher(JointState, 'joint_command', 10)
+        # Subscriber posizione attuale EEF
+        self.pose_sub = self.create_subscription(
+            PoseStamped,
+            '/franka/end_effector_pose',
+            self.ee_pose_callback,
+            10
+        )
 
-        # Flag to avoid parallel requests
+        # Publisher per target EEF
+        self.pose_pub = self.create_publisher(
+            PoseStamped,
+            '/franka/end_effector_pose_cmd',
+            10
+        )
+
         self.processing = False
+        self.current_ee_pose = None  # Aggiornata da callback
 
-        # Joint names (must match robot definition)
-        self.joint_names = [
-            "panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4",
-            "panda_joint5", "panda_joint6", "panda_joint7",
-            "panda_finger_joint1", "panda_finger_joint2"
-        ]
+        self.server_url = 'http://129.132.39.85:8000/act'
 
-        # Server endpoint
-        self.server_url = 'http://localhost:5000/process_image'  # ✅ Assicurati che questo sia corretto
-
+    def ee_pose_callback(self, msg):
+        self.current_ee_pose = msg
 
     def image_callback(self, msg):
-        if self.processing:
+        if self.processing:# or self.current_ee_pose is None: # TODO remove
             return
-
+        self.get_logger().info('Immagine ricevuta, inizio elaborazione...')
         self.processing = True
 
         try:
-            # Convert image
-            cv_image = self.bridge.imgmsg_to_cv2(msg, 'bgr8')
+            # Converti immagine
+            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            pil_image = PILImage.fromarray(cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB))
+            image_array = np.array(pil_image)
 
-            # Encode image as PNG
-            _, img_encoded = cv2.imencode('.png', cv_image)
+            # Prepara payload per OpenVLA
+            payload = {
+                'image': image_array,  # JSON serializzabile
+                'instruction': 'Pick up the object',
+                'unnorm_key': 'ucsd_kitchen_dataset_converted_externally_to_rlds'
+            }
 
-            # Prepare request payload
-            files = {'image': ('image.png', img_encoded.tobytes(), 'image/png')}
-            data = {'description': 'Current robot view'}
+            # Invia richiesta
+            response = requests.post(self.server_url, json=payload)
+            if response.status_code != 200:
+                self.get_logger().error(f'Errore nella risposta dal server: {response.status_code}')
+                self.processing = False
+                return
 
-            # Send request
-            response = requests.post(self.server_url, files=files, data=data)
-            response.raise_for_status()
+            # Parse della risposta
+            res = response.json()
+            self.get_logger().info(f'✅ Risposta dal server: {res}')
 
-            # Parse response
-            joint_positions = response.json().get('joint_position')
-            if joint_positions and len(joint_positions) == len(self.joint_names):
-                joint_state = JointState()
-                joint_state.header.stamp = self.get_clock().now().to_msg()
-                joint_state.name = self.joint_names
-                joint_state.position = joint_positions
-                self.publisher_.publish(joint_state)
-                self.get_logger().info('✅ Nuova posizione inviata al robot')
+            # TODO add a print of the response to see the content
+            dx, dy, dz = res[0], res[1], res[2]
+            r, p, y = res[3], res[4], res[5]
+            gripper = res[6]  # se vuoi usarlo dopo
 
-            else:
-                self.get_logger().warn('⚠️ Risposta non valida dal server o numero errato di joint')
+            if self.current_ee_pose is None:
+                self.get_logger().error('❌ La posizione attuale dell EEF non è disponibile.')
+                self.processing = False
+                return
+            
+            pose_cmd = self.get_pose_cmd(dx, dy, dz, r, p, y)
+            
+            self.pose_pub.publish(pose_cmd)
+            self.get_logger().info(f'✅ Nuova pose inviata al robot:\n{pose_cmd.pose}')
+            
 
         except Exception as e:
-            self.get_logger().error(f'Errore nella richiesta HTTP: {e}')
+            self.get_logger().error(f'❌ Errore durante l elaborazione: {e}')
 
-        # Attendi prima di riattivare (simulazione robot richiede tempo per muoversi)
-        time.sleep(0.5)
+        time.sleep(1)
         self.processing = False
+
+
+    def get_pose_cmd(self, dx, dy, dz, r, p, y):
+        # Costruisci T_delta
+        T_delta = np.eye(4)
+        T_delta[:3, :3] = R.from_euler('xyz', [r, p, y]).as_matrix()
+        T_delta[:3, 3] = [dx, dy, dz]
+
+        # Costruisci T_current dalla posa attuale
+        cp = self.current_ee_pose.pose.position
+        cq = self.current_ee_pose.pose.orientation
+        pos = np.array([cp.x, cp.y, cp.z])
+        quat = np.array([cq.x, cq.y, cq.z, cq.w])
+        T_current = np.eye(4)
+        T_current[:3, :3] = R.from_quat(quat).as_matrix()
+        T_current[:3, 3] = pos
+
+        # Calcola T_target = T_current @ T_delta
+        T_target = T_current @ T_delta
+        target_pos = T_target[:3, 3]
+        target_quat = R.from_matrix(T_target[:3, :3]).as_quat()
+
+        # Pubblica nuova posa su /franka/end_effector_pose_cmd
+        pose_cmd = PoseStamped()
+        pose_cmd.header.stamp = self.get_clock().now().to_msg()
+        pose_cmd.header.frame_id = "base_link"  # o il tuo frame di riferimento
+        pose_cmd.pose.position.x = target_pos[0]
+        pose_cmd.pose.position.y = target_pos[1]
+        pose_cmd.pose.position.z = target_pos[2]
+        pose_cmd.pose.orientation.x = target_quat[0]
+        pose_cmd.pose.orientation.y = target_quat[1]
+        pose_cmd.pose.orientation.z = target_quat[2]
+        pose_cmd.pose.orientation.w = target_quat[3]
+
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = ImageToJointsClient()
+    node = ImageToPoseClient()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
