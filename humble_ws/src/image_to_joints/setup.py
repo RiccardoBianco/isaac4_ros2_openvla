@@ -21,6 +21,7 @@ setup(
     entry_points={
     'console_scripts': [
         'image_to_joints = image_to_joints.image_to_joints_node:main',
+        'fk_node = image_to_joints.fk_node:main',
     ],
 },
 )

@@ -25,6 +25,7 @@ venv/
 # Editor config (VSCode, PyCharm, ecc.)
 .vscode/
 .idea/
+config.yaml
 
 # Backup & temp files
 *.swp
