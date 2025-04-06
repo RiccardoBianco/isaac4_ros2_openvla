@@ -70,3 +70,5 @@ __cache__/
 
 # === Output Folder ===
 output/
+
+path_to_save_images/
