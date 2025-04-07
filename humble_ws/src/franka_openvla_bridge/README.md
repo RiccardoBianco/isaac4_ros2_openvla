@@ -2,13 +2,6 @@
 
 This ROS2 package provides a bridge between OpenVLA and Franka robot control. It subscribes to OpenVLA pose messages and publishes joint states for the Franka robot.
 
-## Features
-
-- Robust inverse kinematics using MoveIt
-- Support for both full pose commands and delta commands
-- Visualization of target poses
-- Joint limit checking and safety features
-- Gripper control
 
 ## Dependencies
 
