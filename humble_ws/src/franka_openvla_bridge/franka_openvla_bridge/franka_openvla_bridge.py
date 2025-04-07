@@ -23,7 +23,7 @@ class FrankaOpenVLABridge(Node):
 
         self.delta_sub = self.create_subscription(
             Float64MultiArray,
-            '/cmd_delta',
+            '/openvla/delta_ee',
             self.delta_callback,
             10)
 
