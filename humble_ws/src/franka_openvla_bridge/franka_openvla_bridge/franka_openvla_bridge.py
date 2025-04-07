@@ -29,7 +29,7 @@ class FrankaOpenVLABridge(Node):
 
         self.joint_pub = self.create_publisher(
             JointState,
-            '/gripper/joint_commands',  # controller topic
+            '/joint_commands',  # controller topic
             10)
 
         self.marker_pub = self.create_publisher(
