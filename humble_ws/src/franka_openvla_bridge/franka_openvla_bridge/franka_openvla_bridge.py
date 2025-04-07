@@ -30,7 +30,7 @@ class FrankaOpenVLABridge(Node):
 
         self.joint_pub = self.create_publisher(
             JointState,
-            '/joint_commands',  # controller topic
+            '/joint_command',  # controller topic
             10)
         
         self.current_gripper_value = 1.0
@@ -72,7 +72,7 @@ class FrankaOpenVLABridge(Node):
         ]
         joint_msg.position = list(joint_angles) + [self.current_gripper_value] * 2
 
-        #self.joint_pub.publish(joint_msg) # TODO da inserire, rimosso per test
+        self.joint_pub.publish(joint_msg) # TODO da inserire, rimosso per test
         #self.get_logger().info(f'Joint pose after IK: {joint_msg.position}')
         #self.get_logger().info('Published joint command')
 
@@ -86,22 +86,24 @@ class FrankaOpenVLABridge(Node):
 
         request.ik_request.pose_stamped.pose = pose
         request.ik_request.timeout.sec = 2
-        # request.ik_request.attempts = 5
+        request.ik_request.avoid_collisions = True
+
         joint_state = JointState()
         joint_state.name = [
             'panda_joint1', 'panda_joint2', 'panda_joint3',
             'panda_joint4', 'panda_joint5', 'panda_joint6', 'panda_joint7'
         ]
-        joint_state.position = [-0.5, 0.3, 0.0, -1.5, 1.0, 1.2, 0.5]  # posizione iniziale neutra
+        #joint_state.position = [-0.5, 0.3, 0.0, -1.5, 1.0, 1.2, 0.5]
+        #joint_state.position = [2.294370409706764, -0.5127072893924473, -0.043720035001156524, -0.9431964410628216, -2.897205191313485, 3.5048637136569343, -0.17314318219185293]  # posizione iniziale neutra
+        if self.joint_angles is not None:
+            joint_state.position = self.joint_angles
+        else:
+            joint_state.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # posizione iniziale neutra
 
         request.ik_request.robot_state = RobotState(joint_state=joint_state, is_diff=False)
-        #self.get_logger().info(f'Joint state names: {request.ik_request.robot_state.joint_state.name}')
-        #self.get_logger().info(f'Joint state positions: {request.ik_request.robot_state.joint_state.position}')
 
-        #self.get_logger().info('Pre future')
         future = self.ik_client.call_async(request)
         future.add_done_callback(self.handle_ik_response)
-        #self.get_logger().info('Post future')
         return self.joint_angles
 
     def handle_ik_response(self, future):
