@@ -123,7 +123,7 @@ class FrankaOpenVLABridge(Node):
     def apply_delta(self, pose, delta):
         """
         Apply a delta transformation to a pose
-        delta: [dx, dy, dz, droll, dpitch, dyaw, dgrip]
+        delta: [dx, dy, dz, droll, dpitch, dyaw, dgrip] in end-effector frame
         """
         # Extract position and orientation
         position = np.array([pose.position.x, pose.position.y, pose.position.z])
@@ -137,16 +137,24 @@ class FrankaOpenVLABridge(Node):
         # Extract euler angles
         roll, pitch, yaw = rot.as_euler('xyz')
         
-        # Apply position delta
-        new_position = position + np.array(delta[:3])
+        # Transform position delta from end-effector frame to world frame
+        # The delta is in the end-effector's local frame, so we need to rotate it
+        position_delta = np.array(delta[:3])
+        world_position_delta = R @ position_delta
         
-        # Apply orientation delta
-        new_roll = roll + delta[3]
-        new_pitch = pitch + delta[4]
-        new_yaw = yaw + delta[5]
+        # Apply position delta in world frame
+        new_position = position + world_position_delta
         
-        # Create new rotation matrix
-        new_rot = Rotation.from_euler('xyz', [new_roll, new_pitch, new_yaw])
+        # For orientation, we need to be careful with the order of rotations
+        # The delta angles are in the end-effector's local frame
+        delta_rot = Rotation.from_euler('xyz', [delta[3], delta[4], delta[5]])
+        delta_R = delta_rot.as_matrix()
+        
+        # Compose the rotations: R_new = R_current * R_delta
+        new_R = R @ delta_R
+        
+        # Convert back to quaternion
+        new_rot = Rotation.from_matrix(new_R)
         new_orientation = new_rot.as_quat()
         
         # Create new pose
