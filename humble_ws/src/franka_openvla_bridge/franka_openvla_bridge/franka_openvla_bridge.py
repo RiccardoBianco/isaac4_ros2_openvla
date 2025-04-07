@@ -35,7 +35,7 @@ class FrankaOpenVLABridge(Node):
         
         self.current_gripper_value = 1.0
         
-
+        self.joint_angles = None
 
         self.ik_client = self.create_client(GetPositionIK, '/compute_ik')
         while not self.ik_client.wait_for_service(timeout_sec=3.0):
@@ -55,14 +55,14 @@ class FrankaOpenVLABridge(Node):
         self.process_target_pose(msg.pose)
 
     def process_target_pose(self, pose: Pose):
-        self.get_logger().info('Processing target pose')
+        #self.get_logger().info('Processing target pose')
         joint_angles = self.compute_ik(pose)
-        self.get_logger().info('IK computation done')
+        #self.get_logger().info('IK computation done')
 
         if joint_angles is None:
             self.get_logger().warn('IK solution failed.')
             return
-        self.get_logger().info(f'IK solution found: {joint_angles}')
+        #self.get_logger().info(f'IK solution found: {joint_angles}')
         joint_msg = JointState()
         joint_msg.header.stamp = self.get_clock().now().to_msg()
         joint_msg.name = [
@@ -73,8 +73,8 @@ class FrankaOpenVLABridge(Node):
         joint_msg.position = list(joint_angles) + [self.current_gripper_value] * 2
 
         #self.joint_pub.publish(joint_msg) # TODO da inserire, rimosso per test
-        self.get_logger().info(f'Joint pose after IK: {joint_msg.position}')
-        self.get_logger().info('Published joint command')
+        #self.get_logger().info(f'Joint pose after IK: {joint_msg.position}')
+        #self.get_logger().info('Published joint command')
 
 
 
@@ -82,36 +82,42 @@ class FrankaOpenVLABridge(Node):
         request = GetPositionIK.Request()
         request.ik_request.group_name = "panda_arm"
         request.ik_request.pose_stamped.header.frame_id = "panda_link0"
+        request.ik_request.pose_stamped.header.stamp = self.get_clock().now().to_msg()
+
         request.ik_request.pose_stamped.pose = pose
-        request.ik_request.timeout.sec = 1
+        request.ik_request.timeout.sec = 2
         # request.ik_request.attempts = 5
         joint_state = JointState()
         joint_state.name = [
             'panda_joint1', 'panda_joint2', 'panda_joint3',
             'panda_joint4', 'panda_joint5', 'panda_joint6', 'panda_joint7'
         ]
-        joint_state.position = [0.0] * 7  # posizione iniziale neutra
+        joint_state.position = [-0.5, 0.3, 0.0, -1.5, 1.0, 1.2, 0.5]  # posizione iniziale neutra
 
-        request.ik_request.robot_state = RobotState(joint_state=joint_state)
+        request.ik_request.robot_state = RobotState(joint_state=joint_state, is_diff=False)
+        #self.get_logger().info(f'Joint state names: {request.ik_request.robot_state.joint_state.name}')
+        #self.get_logger().info(f'Joint state positions: {request.ik_request.robot_state.joint_state.position}')
 
+        #self.get_logger().info('Pre future')
         future = self.ik_client.call_async(request)
-        rclpy.spin_until_future_complete(self, future)
+        future.add_done_callback(self.handle_ik_response)
+        #self.get_logger().info('Post future')
+        return self.joint_angles
 
+    def handle_ik_response(self, future):
         if future.result() and future.result().error_code.val == 1:
-            self.get_logger().info(f'future result: {future.result()}')
-            return future.result().solution.joint_state.position[:7]
+            #self.get_logger().info(f'future result: {future.result()}')
+            self.joint_angles = future.result().solution.joint_state.position[:7]
         else:
             self.get_logger().info('IK solver failed or timed out')
-            return None
+            self.joint_angles = None
+        self.get_logger().info(f'Joint new: {self.joint_angles}')
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = FrankaOpenVLABridge()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+    rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
 

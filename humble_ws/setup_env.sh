@@ -1,3 +1,4 @@
+apt-get update
 sudo apt install ros-humble-cv-bridge # TODO check is necessary
 
 apt install pip
@@ -6,7 +7,7 @@ pip install requests
 pip install json_numpy
 
 
-apt-get update
+
 rosdep install --from-paths src --ignore-src --rosdistro=humble -y
 
 apt-get install -y ros-humble-moveit ros-humble-moveit-ros-planning-interface ros-humble-tf-transformations
