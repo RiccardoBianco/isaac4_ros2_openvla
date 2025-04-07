@@ -52,7 +52,7 @@ class DirectKinematics(Node):
         if len(msg.position) < 7:
             self.get_logger().warn("JointState message does not contain 7 joints.")
             return
-
+        #self.get_logger().info(f"Received joint states: {msg.position}")
         joint_variables = msg.position[:7]
         dh = self.dh_params(joint_variables)
 
@@ -77,7 +77,7 @@ class DirectKinematics(Node):
         pose_msg.pose.orientation.w = quaternion[3]
 
         self.publisher.publish(pose_msg)
-        self.get_logger().debug(f"Published pose: {pose_msg}")
+        self.get_logger().info(f"Published pose: {pose_msg}")
 
 
 def main(args=None):

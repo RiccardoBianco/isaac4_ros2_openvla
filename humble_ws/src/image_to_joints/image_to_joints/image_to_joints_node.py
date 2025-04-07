@@ -1,13 +1,13 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, JointState
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from cv_bridge import CvBridge
 import cv2
 import requests
 import numpy as np
 import time
-from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Rotation
 from PIL import Image as PILImage
 import json_numpy
 import yaml
@@ -57,7 +57,7 @@ class ImageToPoseClient(Node):
         self.processing = False
         self.current_ee_pose = None  # Aggiornata da callback
 
-        self.server_url = self.set_server_url("config.yaml")
+        self.server_url = self.set_server_url(".config.yaml") # TODO fix
 
 
     def set_server_url(self, config_path):
@@ -106,17 +106,12 @@ class ImageToPoseClient(Node):
             # Parse della risposta
             res = response.json()
             print(f'✅ Risposta dal server: {res}')
+   
             
-            # TODO add a print of the response to see the content
-            dx, dy, dz = res[0], res[1], res[2]
-            r, p, y = res[3], res[4], res[5]
-            gripper_value = res[6]  # se vuoi usarlo dopo
-
-            
-            pose_cmd = self.get_cmd_pose(self.current_ee_pose, dx, dy, dz, r, p, y)
+            pose_cmd = self.apply_delta(self.current_ee_pose, res[:6])
             self.pose_pub.publish(pose_cmd)
 
-            gripper_cmd = self.get_gripper_cmd(gripper_value)
+            gripper_cmd = self.get_gripper_cmd(res[6])
             self.gripper_pub.publish(gripper_cmd)
                 
         
@@ -126,6 +121,28 @@ class ImageToPoseClient(Node):
         time.sleep(2)
         self.processing = False
 
+    def apply_delta(self, pose_stamped: PoseStamped, delta):
+        pose = pose_stamped.pose
+        position = np.array([pose.position.x, pose.position.y, pose.position.z])
+        orientation = np.array([pose.orientation.x, pose.orientation.y,
+                                pose.orientation.z, pose.orientation.w])
+        R = Rotation.from_quat(orientation).as_matrix()
+        world_delta = R @ np.array(delta[:3])
+        new_position = position + world_delta
+
+        delta_rot = Rotation.from_euler('xyz', delta[3:6])
+        new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
+
+        new_pose = PoseStamped()
+        new_pose.header.stamp = self.get_clock().now().to_msg()
+        new_pose.header.frame_id = "panda_link0"
+        new_pose.pose.position.x, new_pose.pose.position.y, new_pose.pose.position.z = new_position
+        new_pose.pose.orientation.x, new_pose.pose.orientation.y, new_pose.pose.orientation.z, new_pose.pose.orientation.w = new_orientation
+
+        # TODO check gripper
+        #self.current_gripper_value = np.clip(self.current_gripper_value + delta[6], 0.0, 1.0)
+        return new_pose
+
     def get_gripper_cmd(self, gripper_value):
         gripper_position = self.max_gripper * gripper_value
 
@@ -133,40 +150,6 @@ class ImageToPoseClient(Node):
         gripper_cmd.header.stamp = self.get_clock().now().to_msg()
         gripper_cmd.position =  [gripper_position] 
         return gripper_cmd
-
-
-    def get_cmd_pose(self, ee_pose: PoseStamped, dx, dy, dz, roll, pitch, yaw) -> PoseStamped:
-
-        pos = ee_pose.pose.position
-        quat = ee_pose.pose.orientation
-
-
-        r_current = R.from_quat([quat.x, quat.y, quat.z, quat.w])
-        r_delta = R.from_euler('xyz', [roll, pitch, yaw])
-
-
-        r_new = r_current * r_delta
-        quat_new = r_new.as_quat()  # [x, y, z, w]
-
-        # 5. Trasforma il delta di posizione nell'ee frame → base frame
-        delta_pos_local = np.array([dx, dy, dz])
-        delta_pos_base = r_current.apply(delta_pos_local)
-
-        pos_current = np.array([pos.x, pos.y, pos.z])
-        pos_new = pos_current + delta_pos_base
-
-        new_pose = PoseStamped()
-        new_pose.header.stamp = self.get_clock().now().to_msg()
-        new_pose.header.frame_id = "base_link"
-        new_pose.pose.position.x = pos_new[0]
-        new_pose.pose.position.y = pos_new[1]
-        new_pose.pose.position.z = pos_new[2]
-        new_pose.pose.orientation.x = quat_new[0]
-        new_pose.pose.orientation.y = quat_new[1]
-        new_pose.pose.orientation.z = quat_new[2]
-        new_pose.pose.orientation.w = quat_new[3]
-
-        return new_pose
     
 
 

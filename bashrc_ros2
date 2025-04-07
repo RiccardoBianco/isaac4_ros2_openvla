@@ -105,21 +105,9 @@ fi
 source /opt/ros/humble/setup.sh
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export FASTRTPS_DEFAULT_PROFILES_FILE=/root/humble_ws/fastdds.xml
-
-sudo apt install ros-humble-cv-bridge # TODO check is necessary
-
-apt install pip
-pip install flask
-pip install requests
-
-
-
 cd /root/humble_ws
-apt-get update
-rosdep install --from-paths src --ignore-src --rosdistro=humble -y
-source /opt/ros/humble/setup.sh
-colcon build
-source install/local_setup.bash
+
 
 alias b='colcon build && source install/local_setup.bash'
+alias s='source install/local_setup.bash'
 
