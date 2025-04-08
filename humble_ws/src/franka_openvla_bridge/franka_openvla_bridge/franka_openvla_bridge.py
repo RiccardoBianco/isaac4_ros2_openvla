@@ -10,6 +10,8 @@ from moveit_msgs.srv import GetPositionIK
 from moveit_msgs.msg import RobotState
 
 
+
+
 class FrankaOpenVLABridge(Node):
     def __init__(self):
         super().__init__('franka_openvla_bridge')
@@ -17,25 +19,27 @@ class FrankaOpenVLABridge(Node):
         # ROS 2 interfaces
         self.pose_sub = self.create_subscription(
             PoseStamped,
-            #'/cmd_pose',
-            '/cartesian_impedance_example_controller/measured_pose',
+            '/cmd_pose',
+            #'/cartesian_impedance_example_controller/measured_pose',
             self.pose_callback,
-            10)
+            1)
     
         self.gripper_sub = self.create_subscription(
             JointState,
             '/gripper/joint_commands',
             self.gripper_callback,
-            10)
+            1)
 
         self.joint_pub = self.create_publisher(
             JointState,
             '/joint_command',  # controller topic
-            10)
+            1)
         
         self.current_gripper_value = 1.0
-        
         self.joint_angles = None
+        self.neutral_pose = [0.0, 0.0, 0.0, - np.pi/2, 0.0, np.pi/2, np.pi/4]  # Neutral pose
+        self.neutral_gripper = [1.0, 1.0]  # Neutral gripper pose
+
 
         self.ik_client = self.create_client(GetPositionIK, '/compute_ik')
         while not self.ik_client.wait_for_service(timeout_sec=3.0):
@@ -43,6 +47,24 @@ class FrankaOpenVLABridge(Node):
 
         self.get_logger().info('Franka OpenVLA Bridge started.')
 
+        self.move_to_neutral_pose()
+
+    def move_to_neutral_pose(self):
+        self.get_logger().info('Moving to neutral pose')
+        joint_msg = JointState()
+        joint_msg.header.stamp = self.get_clock().now().to_msg()
+        joint_msg.name = [
+            'panda_joint1', 'panda_joint2', 'panda_joint3',
+            'panda_joint4', 'panda_joint5', 'panda_joint6', 'panda_joint7',
+            'panda_finger_joint1', 'panda_finger_joint2'
+         ] 
+        
+        joint_msg.position = self.neutral_pose + self.neutral_gripper
+        self.joint_pub.publish(joint_msg)
+
+        input('Press Enter to continue...')  # Wait for user input before proceeding
+        
+        
     def gripper_callback(self, msg: JointState):
         self.get_logger().info('Received gripper command')
         if len(msg.position) > 0:
@@ -51,7 +73,7 @@ class FrankaOpenVLABridge(Node):
             self.current_gripper_value = 1.0
 
     def pose_callback(self, msg: PoseStamped):
-        self.get_logger().info(f'Received full pose command: {msg}')
+        #self.get_logger().info(f'Received full pose command: {msg}')
         self.process_target_pose(msg.pose)
 
     def process_target_pose(self, pose: Pose):
@@ -93,14 +115,14 @@ class FrankaOpenVLABridge(Node):
             'panda_joint1', 'panda_joint2', 'panda_joint3',
             'panda_joint4', 'panda_joint5', 'panda_joint6', 'panda_joint7'
         ]
-        #joint_state.position = [-0.5, 0.3, 0.0, -1.5, 1.0, 1.2, 0.5]
-        #joint_state.position = [2.294370409706764, -0.5127072893924473, -0.043720035001156524, -0.9431964410628216, -2.897205191313485, 3.5048637136569343, -0.17314318219185293]  # posizione iniziale neutra
+
         if self.joint_angles is not None:
             joint_state.position = self.joint_angles
         else:
-            joint_state.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # posizione iniziale neutra
+            joint_state.position = self.neutral_pose
 
         request.ik_request.robot_state = RobotState(joint_state=joint_state, is_diff=False)
+        request.ik_request.robot_state.joint_state.position = self.neutral_pose  # inizializzato fisso
 
         future = self.ik_client.call_async(request)
         future.add_done_callback(self.handle_ik_response)
