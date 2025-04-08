@@ -21,7 +21,8 @@ simulation = True # TODO manage gripper correctly
 ee_pose_topic = '/cartesian_impedance_example_controller/measured_pose'
 ee_pose_cmd_topic = '/cmd_pose'
 gripper_cmd_topic = '/gripper/joint_commands'
-camera_topic = '/camera/color/image_raw'
+# camera_topic = '/camera/color/image_raw'
+camera_topic = '/rgb'
 
 
 class ImageToPoseClient(Node):
@@ -34,7 +35,7 @@ class ImageToPoseClient(Node):
         # Subscriber immagini
         self.subscription = self.create_subscription(Image, camera_topic, self.image_callback, 1)
         # Subscriber posizione attuale EEF
-        self.pose_sub = self.create_subscription(PoseStamped, ee_pose_cmd_topic, self.ee_pose_callback, 1)
+        self.pose_sub = self.create_subscription(PoseStamped, ee_pose_topic, self.ee_pose_callback, 1)
 
 
         # Publisher per target EEF
@@ -57,7 +58,7 @@ class ImageToPoseClient(Node):
         self.processing = False
         self.current_ee_pose = None  # Aggiornata da callback
 
-        self.server_url = self.set_server_url(".config.yaml") # TODO fix
+        self.server_url = self.set_server_url("config.yaml") # TODO fix
 
 
     def set_server_url(self, config_path):
@@ -71,16 +72,19 @@ class ImageToPoseClient(Node):
 
     def ee_pose_callback(self, msg): # TODO check if this is correct
         # Aggiorna la posa corrente dell EEF
+        # self.get_logger().info(f'ee_pose callback called')
         if self.processing:
             return
+        # self.get_logger().info(f'Posa corrente EEF aggiornata: {msg}')
         self.current_ee_pose = msg
 
 
     def image_callback(self, msg):
+        # self.get_logger().info(f'Image callback called: Processing {self.processing}, Current ee pose {self.current_ee_pose}')
         if self.processing or self.current_ee_pose is None: # TODO remove
             return
         
-        print('Immagine ricevuta, inizio elaborazione...')
+        # self.get_logger().info(f'Immagine ricevuta, inizio elaborazione')
         self.processing = True
 
         try:
@@ -95,7 +99,7 @@ class ImageToPoseClient(Node):
                 'instruction': 'Pick up the object',
                 'unnorm_key': 'ucsd_kitchen_dataset_converted_externally_to_rlds'
             }
-            
+            '''
             # Invia richiesta
             response = requests.post(self.server_url, json=payload)
             if response.status_code != 200:
@@ -106,10 +110,19 @@ class ImageToPoseClient(Node):
             # Parse della risposta
             res = response.json()
             print(f'✅ Risposta dal server: {res}')
-   
+            '''
+            if (self.cnt // 3) % 2 == 0: 
+                sgn = 1
+            else:
+                sgn = -1
+            self.cnt += 1
+            print(f'cnt: {self.cnt}, sgn: {sgn}')
+
+            res = [0.0, 0.0, sgn*0.05, 0 , 0 , 0, 0.5] # should move 5 cm in x direction and open gripper
             
             pose_cmd = self.apply_delta(self.current_ee_pose, res[:6])
             self.pose_pub.publish(pose_cmd)
+            self.get_logger().info(f'✅ Comando EEF: {pose_cmd}')
 
             gripper_cmd = self.get_gripper_cmd(res[6])
             self.gripper_pub.publish(gripper_cmd)
@@ -118,11 +131,13 @@ class ImageToPoseClient(Node):
         except Exception as e:
             self.get_logger().error(f'❌ Errore durante l elaborazione: {e}')
 
-        time.sleep(2)
+        # time.sleep(2.0)
         self.processing = False
+        self.current_ee_pose = None
 
     def apply_delta(self, pose_stamped: PoseStamped, delta):
         pose = pose_stamped.pose
+        self.get_logger().info(f'Pose pre delta: {pose}')
         position = np.array([pose.position.x, pose.position.y, pose.position.z])
         orientation = np.array([pose.orientation.x, pose.orientation.y,
                                 pose.orientation.z, pose.orientation.w])
@@ -138,7 +153,7 @@ class ImageToPoseClient(Node):
         new_pose.header.frame_id = "panda_link0"
         new_pose.pose.position.x, new_pose.pose.position.y, new_pose.pose.position.z = new_position
         new_pose.pose.orientation.x, new_pose.pose.orientation.y, new_pose.pose.orientation.z, new_pose.pose.orientation.w = new_orientation
-
+        self.get_logger().info(f'Pose post delta: {new_pose.pose}')
         # TODO check gripper
         #self.current_gripper_value = np.clip(self.current_gripper_value + delta[6], 0.0, 1.0)
         return new_pose
