@@ -72,3 +72,6 @@ __cache__/
 output/
 
 path_to_save_images/
+
+openvla/prova_imgs/
+.env

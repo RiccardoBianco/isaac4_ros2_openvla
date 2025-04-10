@@ -26,24 +26,32 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Tutorial on using the differential IK controller.")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to spawn.")
-# parser.add_argument(
-#     "--save",
-#     action="store_true",
-#     default=False,
-#     help="Save the data from camera at index specified by ``--camera_id``.",
-# )
-
-# parser.add_argument(
-#     "--camera_id",
-#     type=int,
-#     choices={0, 1},
-#     default=0,
-#     help=(
-#         "The camera ID to use for displaying points or saving the camera data. Default is 0."
-#         " The viewport will always initialize with the perspective of camera 0."
-#     ),
-# )
-
+parser.add_argument(
+    "--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'."
+)
+#parser.add_argument(
+#    "--anti_aliasing", type=int, default=0, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA)."
+#)
+#parser.add_argument(
+#    "--denoiser", type=bool, default=False, help="Enable denoiser. Options: True (on), False (off)."
+#)
+# For Cameras
+parser.add_argument(
+    "--save",
+    action="store_true",
+    default=False,
+    help="Save the data from camera at index specified by ``--camera_id``.",
+)
+parser.add_argument(
+    "--camera_id",
+    type=int,
+    choices={0, 1},
+    default=0,
+    help=(
+        "The camera ID to use for displaying points or saving the camera data. Default is 0."
+        " The viewport will always initialize with the perspective of camera 0."
+    ),
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -71,6 +79,7 @@ from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms
+from isaaclab.utils import convert_dict_to_backend
 import isaacsim.core.utils.prims as prim_utils
 import omni.replicator.core as rep
 
@@ -79,6 +88,45 @@ from isaaclab.utils import convert_dict_to_backend
 # Pre-defined configs
 ##
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
+from isaaclab.sensors.camera import Camera, CameraCfg
+import omni.replicator.core as rep
+import os
+
+#For OpenVLA
+import json_numpy
+import numpy as np
+from PIL import Image
+import time
+import requests
+
+# Apply patch for handling numpy arrays in JSON
+json_numpy.patch()
+
+# Define the URL of the server endpoint
+SERVER_URL = "http://0.0.0.0:8000/act"
+
+def send_request(image_path: str, instruction: str, unnorm_key: str):
+    # Open the image
+    image = Image.open(image_path)
+
+    # Convert the image to a numpy array
+    image_array = np.array(image)
+
+    # Prepare the payload with the image (as a numpy array) and instruction
+    payload = {
+        "image": image_array,  # Sending as numpy array, no conversion to list
+        "instruction": instruction,
+        "unnorm_key": unnorm_key  # Add the unnorm_key to the payload
+    }
+
+    # Send POST request to the server
+    response = requests.post(SERVER_URL, json=payload)
+
+    # Check the response
+    if response.status_code == 200:
+        print("Response from server:", response.json())
+    else:
+        print("Error:", response.status_code, response.text)
 
 from isaaclab.sensors.camera import Camera, CameraCfg
 
@@ -177,7 +225,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
-
     
 
     sugar_box = AssetBaseCfg(
@@ -204,7 +251,24 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, -0.3, 0.0)),
     )
 
-
+    camera = CameraCfg(
+        prim_path="/World/CameraSensor",
+        update_period=0,
+        height=1080,
+        width=1920,
+        data_types=[
+            "rgb",
+        ],
+        colorize_semantic_segmentation=True,
+        colorize_instance_id_segmentation=True,
+        colorize_instance_segmentation=True,
+        spawn=sim_utils.PinholeCameraCfg(
+            #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+            focal_length=16.0,         # Wider view
+            focus_distance=1000.0,     # Farther focus (everything is sharp)
+            horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+        ),
+    )
 
 
     # articulation
@@ -215,13 +279,40 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
-
-
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     """Runs the simulation loop."""
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
+    
+    #######################
+    # CAMERA STUFF - Start
+    #######################
+
+    # Get the camera
+    camera = scene["camera"]
+
+    # Create replicator writer
+    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")
+    rep_writer = rep.BasicWriter(
+        output_dir=output_dir,
+        frame_padding=0,
+        colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+        colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+        colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+    )
+
+    # Camera positions, targets, orientations
+    camera_positions = torch.tensor([[1.5, 1.5, 1.5]], device=sim.device)
+    camera_targets = torch.tensor([[0.0, 0.0, 0.0]], device=sim.device)
+    # These orientations are in ROS-convention, and will position the cameras to view the origin
+    camera.set_world_poses_from_view(camera_positions, camera_targets)
+    # Index of the camera to use for visualization and saving
+    camera_index = args_cli.camera_id
+
+    ###################
+    # CAMERA STUFF - End
+    ###################
 
     # Create controller
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
@@ -304,6 +395,15 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             # nuovo goal
 
             # prendo immagine e invio a OpenVLA
+            # Call OpenVLA
+            image_path = f"./isaac_ws/src/im_0.jpg"
+            instruction = "pick up the green zucchini"
+
+            # Select an appropriate unnorm_key from the available dataset options
+            #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
+            unnorm_key = "bridge_orig"
+            # Send request to the server
+            send_request(image_path, instruction, unnorm_key)
             # delta = res[:6]
             print(f"✅ Nuovo goal: {current_goal_idx}")
             delta = ee_goal_deltas[current_goal_idx]
@@ -316,6 +416,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             goal_reached = False
             
             current_goal_idx = (current_goal_idx + 1) % len(ee_goal_deltas)
+            
 
         # get current state
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
@@ -333,13 +434,51 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
 
-
-
         # apply actions
         robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
         scene.write_data_to_sim()
         # perform step
         sim.step()
+
+        ####################################
+        # CAMERA STUFF - Start
+        ####################################
+
+        # Update camera data
+        camera.update(dt=sim.get_physics_dt())
+        # Print camera info
+        #print(camera)
+        #if "rgb" in camera.data.output.keys():
+        #    print("Received shape of rgb image        : ", camera.data.output["rgb"].shape)
+        #print("-------------------------------")
+
+        # Extract camera data (TODO CHANGE CONDITION OF SAVING)
+        if args_cli.save and count % 150 == 0:
+            # Save images from camera at camera_index
+            # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
+            single_cam_data = convert_dict_to_backend(
+                {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
+            )
+
+            # Extract the other information
+            single_cam_info = camera.data.info[camera_index]
+
+            # Pack data back into replicator format to save them using its writer
+            rep_output = {"annotators": {}}
+            for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
+                if info is not None:
+                    rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
+                else:
+                    rep_output["annotators"][key] = {"render_product": {"data": data}}
+            # Save images
+            # Note: We need to provide On-time data for Replicator to save the images.
+            rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
+            rep_writer.write(rep_output)
+
+        ####################################
+        # CAMERA STUFF - End
+        ####################################
+
         # update sim-time
 
         count += 1

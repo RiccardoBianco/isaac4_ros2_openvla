@@ -2,6 +2,7 @@ import requests
 import json_numpy
 import numpy as np
 from PIL import Image
+import time
 
 # Apply patch for handling numpy arrays in JSON
 json_numpy.patch()
@@ -34,11 +35,14 @@ def send_request(image_path: str, instruction: str, unnorm_key: str):
 
 if __name__ == "__main__":
     # Define the image path and instruction
-    image_path = "openvla/im_0.jpg"
-    instruction = "pick up the object"
+    for i in range(50):
+        
+        image_path = f"../prova_imgs/im_{i}.jpg"
+        instruction = "pick up the green zucchini"
 
-    # Select an appropriate unnorm_key from the available dataset options
-    unnorm_key = "austin_buds_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
-
-    # Send request to the server
-    send_request(image_path, instruction, unnorm_key)
+        # Select an appropriate unnorm_key from the available dataset options
+        #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
+        unnorm_key = "bridge_orig"
+        # Send request to the server
+        send_request(image_path, instruction, unnorm_key)
+        time.sleep(5)
