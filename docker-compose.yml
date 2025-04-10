@@ -1,8 +1,7 @@
 services:
   isaac_sim:
-    image: nvcr.io/nvidia/isaac-sim:4.5.0
+    build: ./isaac_ws
     container_name: isaac-sim
-    entrypoint: bash
     runtime: nvidia
     environment:
       - DISPLAY=${DISPLAY}
@@ -21,9 +20,15 @@ services:
   ros2_humble:
     image: osrf/ros:humble-desktop-full-jammy
     container_name: ros2_humble
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - SDL_VIDEODRIVER=x11
     volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
       - ./humble_ws:/root/humble_ws
       - ./bashrc_ros2:/root/.bashrc
     network_mode: host
     stdin_open: true
     tty: true
+  
