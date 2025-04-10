@@ -26,6 +26,15 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Tutorial on using the differential IK controller.")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
 parser.add_argument("--num_envs", type=int, default=128, help="Number of environments to spawn.")
+parser.add_argument(
+    "--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'."
+)
+parser.add_argument(
+    "--anti_aliasing", type=int, default=0, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA)."
+)
+parser.add_argument(
+    "--denoiser", type=bool, default=False, help="Enable denoiser. Options: True (on), False (off)."
+)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
@@ -54,6 +63,43 @@ from isaaclab.utils.math import subtract_frame_transforms
 # Pre-defined configs
 ##
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
+from isaaclab.assets import RigidObject, RigidObjectCfg
+
+#For OpenVLA
+import json_numpy
+import numpy as np
+from PIL import Image
+import time
+import requests
+
+# Apply patch for handling numpy arrays in JSON
+json_numpy.patch()
+
+# Define the URL of the server endpoint
+SERVER_URL = "http://0.0.0.0:8000/act"
+
+def send_request(image_path: str, instruction: str, unnorm_key: str):
+    # Open the image
+    image = Image.open(image_path)
+
+    # Convert the image to a numpy array
+    image_array = np.array(image)
+
+    # Prepare the payload with the image (as a numpy array) and instruction
+    payload = {
+        "image": image_array,  # Sending as numpy array, no conversion to list
+        "instruction": instruction,
+        "unnorm_key": unnorm_key  # Add the unnorm_key to the payload
+    }
+
+    # Send POST request to the server
+    response = requests.post(SERVER_URL, json=payload)
+
+    # Check the response
+    if response.status_code == 200:
+        print("Response from server:", response.json())
+    else:
+        print("Error:", response.status_code, response.text)
 
 
 
@@ -80,15 +126,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
-    )
-
-    banana = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Banana",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/011_banana.usd", scale=(0.1, 0.1, 0.1)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 1.0)),
-
     )
 
     box = AssetBaseCfg(
@@ -125,12 +162,12 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
-
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     """Runs the simulation loop."""
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
+    #banana = scene["banana"]
 
     # Create controller
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
@@ -194,6 +231,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             diff_ik_controller.set_command(ik_commands)
             # change goal
             current_goal_idx = (current_goal_idx + 1) % len(ee_goals)
+
+            # Call OpenVLA
+            image_path = f"./isaac_ws/src/im_0.jpg"
+            instruction = "pick up the green zucchini"
+
+            # Select an appropriate unnorm_key from the available dataset options
+            #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
+            unnorm_key = "bridge_orig"
+            # Send request to the server
+            send_request(image_path, instruction, unnorm_key)
         else:
             # obtain quantities from simulation
             jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]

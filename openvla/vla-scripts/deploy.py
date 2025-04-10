@@ -101,7 +101,7 @@ class OpenVLAServer:
 
             #New
             # Save image in .jpg format
-            save_image_with_progressive_filename(image, reset_folder=False)
+            #save_image_with_progressive_filename(image, reset_folder=False)
 
             # Run VLA Inference
             prompt = get_openvla_prompt(instruction, self.openvla_path)
@@ -192,7 +192,7 @@ class DeployConfig:
 
 @draccus.wrap()
 def deploy(cfg: DeployConfig) -> None:
-    clear_img_folder()
+    #clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
     server.run(cfg.host, port=cfg.port)
 
