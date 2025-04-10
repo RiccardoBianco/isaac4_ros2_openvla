@@ -83,22 +83,65 @@ from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import Camera, CameraCfg
 
 
+        # ee_pose = actions["ee_pose"]
+        # current_pos = current_ee[:3] # position
+        # pos_delta = ee_pose[:3]  # delta[:3]
+        # target_pos = current_pos + pos_delta
+
+        # current_orient_xyzw = current_ee[3:]  # current orientation as x, y, z, w
+        # orientation_delta_euler = ee_pose[
+        #     3:
+        # ]  # Delta in orientation as predicted by the model in euler angles
+
+        # # Convert relative orientation to absolute orientation
+        # current_orientation = R.from_quat(current_orient_xyzw)
+        # orientation_delta = R.from_euler("xyz", orientation_delta_euler)
+
+        # target_orientation = current_orientation * orientation_delta
+        # target_orientation_xyzw = target_orientation.as_quat()
+
+
+
+        # x,y,z = target_pos
+
 def apply_delta(position, orientation, delta):
     
     position = position.squeeze(0)
     orientation = orientation.squeeze(0)
 
+    pos_list = list(position)
+    orient = list(orientation)
+    print(f"Prev position in base frame: {pos_list[0]:.3}, {pos_list[1]:.3}, {pos_list[2]:.3}")
+    print(f"Prev orientation in base frame: {orient[0]:.3}, {orient[1]:.3}, {orient[2]:.3}, {orient[3]:.3}")
+    # print(f"prev orientation: {orientation}")
+    print(f"Delta position in ee frame: {delta[:3]}")
+    print(f"Delta orientation in ee frame: {delta[3:6]}")
+
+
     R = Rotation.from_quat(orientation).as_matrix()
+    print("X local:", R[:, 0])
+    print("Y local:", R[:, 1])
+    print("Z local:", R[:, 2])
+
     # Compute delta in the world frame
     world_delta = R @ np.array(delta[:3])
     new_position = position + world_delta
+
 
     # Apply rotation delta (Euler angles)
     delta_rot = Rotation.from_euler('xyz', delta[3:6])
     new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
 
-    print(f"new_position: {new_position}")
-    print(f"new_orientation: {new_orientation}")
+
+    new_pos_list = list(new_position)
+    new_orient_list = list(new_orientation)
+    print(f"New position in base frame: {new_pos_list[0]:.3}, {new_pos_list[1]:.3}, {new_pos_list[2]:.3}")
+    print(f"New orientation in base frame: {new_orient_list[0]:.3}, {new_orient_list[1]:.3}, {new_orient_list[2]:.3}, {new_orient_list[3]:.3}")
+    # print(f"new_orientation: {new_orientation}")
+    R_ee_to_world = R
+    R_world_to_ee = R_ee_to_world.T  # Inversa della rotazione
+    displacement_in_ee = R_world_to_ee @ (new_position - position)
+    print("Displacement in EE frame:", displacement_in_ee)
 
     new_pose = np.concatenate([new_position, new_orientation])  # shape (7,)
 
@@ -135,13 +178,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
 
-    # banana = AssetBaseCfg(https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac
-    #     prim_path="{ENV_REGEX_NS}/Banana",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/011_banana.usd", scale=(1.0, 1.0, 1.0)
-    #     ),
-    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
-    # )
     
 
     sugar_box = AssetBaseCfg(
@@ -167,51 +203,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, -0.3, 0.0)),
     )
-    # room = AssetBaseCfg(
-    #     prim_path="{ENV_REGEX_NS}/Room",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=f"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Room/simple_room.usd", scale=(1.0, 1.0, 1.0)
-    #     ),
-    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 7.0)),
-    # )
-    
-    # floor = AssetBaseCfg(
-    #     prim_path="{ENV_REGEX_NS}/Floor",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=f"https://omniverse-content-production.s3-us-west-2.amazonaws.com/Assets/Isaac/4.5/Isaac/Environments/Simple_Room/Props/Towel_Room01_floor_bottom.usd", scale=(1.0, 1.0, 1.0)
-    #     ),
-    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
-    # )
 
-
-    # room = AssetBaseCfg(
-    #     prim_path="{ENV_REGEX_NS}/Room",
-    #     spawn=sim_utils.UsdFileCfg(
-    #         usd_path=f"/root/isaac_ws/scene1.usd", scale=(1.0, 1.0, 1.0)
-    #     ),
-    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 5.0)),
-    # )
-
-    # camera = CameraCfg(
-    #     prim_path="/World/CameraSensor",
-    #     update_period=0,
-    #     height=480,
-    #     width=640,
-    #     data_types=[
-    #         "rgb",
-    #         "distance_to_image_plane",
-    #         "normals",
-    #         "semantic_segmentation",
-    #         "instance_segmentation_fast",
-    #         "instance_id_segmentation_fast",
-    #     ],
-    #     colorize_semantic_segmentation=True,
-    #     colorize_instance_id_segmentation=True,
-    #     colorize_instance_segmentation=True,
-    #     spawn=sim_utils.PinholeCameraCfg(
-    #         focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-    #     ),
-    # )
 
 
 
@@ -230,23 +222,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
-    # camera = scene["camera"]
-
-    # # Create replicator writer
-    # output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")
-    # rep_writer = rep.BasicWriter(
-    #     output_dir=output_dir,
-    #     frame_padding=0,
-    #     colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
-    #     colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
-    #     colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
-    # )
-
-    # # Camera positions, targets, orientations
-    # camera_positions = torch.tensor([2.5, 2.5, 2.5], device=sim.device)
-    # camera_targets = torch.tensor([0.0, 0.0, 0.0], device=sim.device)
-    # camera.set_world_poses_from_view(camera_positions, camera_targets)
-    # camera_index = args_cli.camera_id
 
     # Create controller
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
@@ -258,15 +233,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
     goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
-    # Define goals for the arm
-    ee_goal_deltas = [
-        [0.050,  0.020,  0.100,   0.05,  0.02,  0.00],  # 5 cm x, 10 cm z, 5° rx
-        [0.055,  0.025,  0.110,   0.06,  0.02,  0.01],  # leggera variazione
-        [0.060,  0.030,  0.120,   0.07,  0.03,  0.01],
-        [0.065,  0.035,  0.125,   0.08,  0.03,  0.02],
-        [0.070,  0.040,  0.130,   0.09,  0.04,  0.03],
-        [0.075,  0.045,  0.140,   0.10,  0.05,  0.04],  # 7.5 cm x, 14 cm z, 10° rx
-    ]
 
     ee_goal_deltas = [
         [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # 10 cm x
@@ -275,16 +241,25 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
         [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
         [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
-        [0.1, 0.1, 0.1, 10 * np.pi / 180, 10 * np.pi / 180, 10 * np.pi / 180], # +10° x
-        [-0.1, -0.1, -0.1, -10 * np.pi / 180, -10 * np.pi / 180, -10 * np.pi / 180], # -10° x
+        #[0.1, 0.1, 0.1, 30 * np.pi / 180, 30 * np.pi / 180, 30 * np.pi / 180], # +10° x
+        #[-0.1, -0.1, -0.1, -30 * np.pi / 180, -30 * np.pi / 180, -30 * np.pi / 180], # -10° x
     ]
+
+    # ee_goal_deltas = [
+    #     [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0],  # 90° x
+    #     [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0], # -90° x
+    #     [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0],  # 90° y
+    #     [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0], # -90° y
+    #     [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2],  # 90° z
+    #     [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2], # -90° z
+    # ]
 
     ee_goal_deltas = torch.tensor(ee_goal_deltas, device=sim.device)
     # Track the given command
     current_goal_idx = 0
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
-    ik_commands[:] = torch.tensor([0.5, 0.5, 0.7, 0.707, 0, 0.707, 0], device=sim.device) # TODO check if necessary
+    ik_commands[:] = torch.tensor([0.5, 0.0, 0.8, 0, 0, 0, 1], device=sim.device) # TODO check if necessary
 
     # Specify robot-specific parameters
     if args_cli.robot == "franka_panda":
@@ -310,7 +285,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 
     goal_reached = True
-    position_threshold = 0.005  
+    position_threshold = 0.0005  
     angle_threshold = 0.1
 
     while simulation_app.is_running():
@@ -330,6 +305,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             # prendo immagine e invio a OpenVLA
             # delta = res[:6]
+            print(f"✅ Nuovo goal: {current_goal_idx}")
             delta = ee_goal_deltas[current_goal_idx]
             ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
             ee_goal = torch.tensor(ee_goal, device=sim.device).unsqueeze(0)
@@ -338,7 +314,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             diff_ik_controller.reset()
             diff_ik_controller.set_command(ik_commands)
             goal_reached = False
-            print(f"✅ Nuovo goal: {current_goal_idx}")
+            
             current_goal_idx = (current_goal_idx + 1) % len(ee_goal_deltas)
 
         # get current state
@@ -365,7 +341,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # perform step
         sim.step()
         # update sim-time
-        # camera.update(dt=sim.get_physics_dt())
 
         count += 1
         # update buffers
@@ -374,35 +349,37 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         goal_reached = check_goal_reached(ik_commands, ee_pose_w, position_threshold, angle_threshold)
         
 
-        # if "rgb" in camera.data.output.keys():
-        #     print("Received shape of rgb image        : ", camera.data.output["rgb"].shape)
-        # # Extract camera data
-        # if args_cli.save:
-        #     # Save images from camera at camera_index
-        #     # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
-        #     single_cam_data = convert_dict_to_backend(
-        #         {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
-        #     )
-
-        #     # Extract the other information
-        #     single_cam_info = camera.data.info[camera_index]
-
-        #     # Pack data back into replicator format to save them using its writer
-        #     rep_output = {"annotators": {}}
-        #     for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
-        #         if info is not None:
-        #             rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
-        #         else:
-        #             rep_output["annotators"][key] = {"render_product": {"data": data}}
-        #     # Save images
-        #     # Note: We need to provide On-time data for Replicator to save the images.
-        #     rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
-        #     rep_writer.write(rep_output)
-        # obtain quantities from simulation
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         # update marker positions
-        ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
-        goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
+
+        draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
+
+
+def draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker):
+    quat_correction_np = Rotation.from_euler('x', 180, degrees=True).as_quat()  # [x, y, z, w]
+    quat_correction = torch.tensor(quat_correction_np, dtype=torch.float32, device=ee_pose_w.device)
+
+    def apply_marker_rotation(quat_batch, quat_corr):
+        """Applica rotazione correttiva (composizione di quaternioni)"""
+        # Converti in numpy per usare scipy
+        quat_batch_np = quat_batch.cpu().numpy()  # (N, 4)
+        quat_corr_np = quat_corr.cpu().numpy()    # (4,)
+
+        # Composizione: R_correction * R_original
+        r_orig = Rotation.from_quat(quat_batch_np)
+        r_corr = Rotation.from_quat(quat_corr_np)
+        r_combined = r_corr * r_orig
+
+        # Torna a torch tensor
+        return torch.tensor(r_combined.as_quat(), dtype=torch.float32, device=quat_batch.device)
+
+    # --- Applica correzione ai quaternioni ---
+    corrected_ee_quat = apply_marker_rotation(ee_pose_w[:, 3:7], quat_correction)
+    corrected_goal_quat = apply_marker_rotation(ik_commands[:, 3:7], quat_correction)
+
+    # --- Visualizza i marker con orientamento corretto ---
+    ee_marker.visualize(ee_pose_w[:, 0:3], corrected_ee_quat)
+    goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, corrected_goal_quat)
 
 
 def check_goal_reached(ik_commands, ee_pose_w, position_threshold, angle_threshold):
