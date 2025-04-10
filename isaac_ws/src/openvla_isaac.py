@@ -177,7 +177,7 @@ def apply_delta(position, orientation, delta):
 
 
     # Apply rotation delta (Euler angles)
-    delta_rot = Rotation.from_euler('xyz', delta[3:6])
+    delta_rot = Rotation.from_euler('zyx', delta[3:6]) # TODO change xyz
     new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
 
 
@@ -332,25 +332,20 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
         [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
         [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
-        #[0.1, 0.1, 0.1, 30 * np.pi / 180, 30 * np.pi / 180, 30 * np.pi / 180], # +10° x
-        #[-0.1, -0.1, -0.1, -30 * np.pi / 180, -30 * np.pi / 180, -30 * np.pi / 180], # -10° x
+        [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0],  # 90° x
+        [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0], # -90° x
+        [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0],  # 90° y
+        [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0], # -90° y
+        [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2],  # 90° z
+        [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2], # -90° z
     ]
-
-    # ee_goal_deltas = [
-    #     [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0],  # 90° x
-    #     [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0], # -90° x
-    #     [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0],  # 90° y
-    #     [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0], # -90° y
-    #     [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2],  # 90° z
-    #     [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2], # -90° z
-    # ]
 
     ee_goal_deltas = torch.tensor(ee_goal_deltas, device=sim.device)
     # Track the given command
     current_goal_idx = 0
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
-    ik_commands[:] = torch.tensor([0.5, 0.0, 0.8, 0, 0, 0, 1], device=sim.device) # TODO check if necessary
+    ik_commands[:] = torch.tensor([0.5, 0.0, 0.7, 0, 1, 0, 0], device=sim.device) # TODO check if necessary
 
     # Specify robot-specific parameters
     if args_cli.robot == "franka_panda":
