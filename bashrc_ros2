@@ -108,7 +108,7 @@ export FASTRTPS_DEFAULT_PROFILES_FILE=/root/humble_ws/fastdds.xml
 cd /root/humble_ws
 
 
-alias b='colcon build && source install/local_setup.bash'
+alias b='colcon build --mixin release && source install/local_setup.bash'
 alias s='source ~/humble_ws/install/local_setup.bash'
 
 source /opt/ros/humble/setup.bash

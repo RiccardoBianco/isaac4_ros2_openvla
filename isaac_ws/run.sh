@@ -1,0 +1,1 @@
+isaac_lab/isaaclab.sh -p src/openvla_isaac.py  --enable_cameras --save

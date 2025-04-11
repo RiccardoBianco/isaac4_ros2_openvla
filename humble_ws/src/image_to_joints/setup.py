@@ -22,6 +22,7 @@ setup(
     'console_scripts': [
         'image_to_joints = image_to_joints.image_to_joints_node:main',
         'fk_node = image_to_joints.fk_node:main',
+        'test_moveit = image_to_joints.test_moveit:main',
     ],
 },
 )
