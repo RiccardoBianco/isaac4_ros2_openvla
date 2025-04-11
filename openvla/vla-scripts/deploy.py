@@ -47,6 +47,19 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from PIL import Image
 from transformers import AutoModelForVision2Seq, AutoProcessor
+import argparse
+
+# === Globals ===
+SERVER_SIDE_FOLDER = "server_side_images"
+DEFAULT_IMAGE_NAME = "received_image"
+OPENVLA_MODEL = "openvla/openvla-7b"
+
+
+# === Command Line Arguments ===
+parser = argparse.ArgumentParser(description="Get command line arguments")
+parser.add_argument('--save', action='store_true', help="Flag to save the images (server-side)")
+# Parse the arguments
+args = parser.parse_args()
 
 # === Utilities ===
 SYSTEM_PROMPT = (
@@ -99,9 +112,9 @@ class OpenVLAServer:
             image, instruction = payload["image"], payload["instruction"]
             unnorm_key = payload.get("unnorm_key", None)
 
-            #New
-            # Save image in .jpg format
-            #save_image_with_progressive_filename(image, reset_folder=False)
+            if args.save:
+                # Save image in .jpg format
+                save_image_with_progressive_filename(image, reset_folder=False)
 
             # Run VLA Inference
             prompt = get_openvla_prompt(instruction, self.openvla_path)
@@ -124,21 +137,20 @@ class OpenVLAServer:
     def run(self, host: str = "0.0.0.0", port: int = 8000) -> None:
         self.app = FastAPI()
         self.app.post("/act")(self.predict_action)
-        uvicorn.run(self.app, host=host, port=port)
         print("The server is running.... Waiting for post requests")
+        uvicorn.run(self.app, host=host, port=port)
 
-
-def save_image_with_progressive_filename(image, image_directory="server_side_images", base_filename="received_image", extension=".png", reset_folder=False):
+# === Image Saving ===
+def save_image_with_progressive_filename(image, image_directory=SERVER_SIDE_FOLDER, base_filename=DEFAULT_IMAGE_NAME, extension=".png"):
     """
     Saves an image with a progressively higher filename.
     Optionally resets the folder (deletes all previous images).
 
     Parameters:
     - image: The image data (numpy array) to save.
-    - image_directory: Directory to save the images (default is "path_to_save_images").
+    - image_directory: Directory to save the images (default is "server_side_images").
     - base_filename: Base name for the image files (default is "received_image").
-    - extension: File extension (default is ".jpg").
-    - reset_folder: If True, deletes all existing images in the folder before saving (default is False).
+    - extension: File extension (default is ".png").
     """
 
     # Create the image directory if it doesn't exist
@@ -171,16 +183,17 @@ def save_image_with_progressive_filename(image, image_directory="server_side_ima
     print(f"Image saved as: {image_filename}")
     return image_filename
 
+# === Image Folder Clearing ===
 def clear_img_folder():
-    if os.path.exists("server_side_images"):
-        for file in os.listdir("server_side_images"):
-            if file.startswith("received_image") and file.endswith(".png"):
-                os.remove(os.path.join("server_side_images", file))
+    if os.path.exists(SERVER_SIDE_FOLDER):
+        for file in os.listdir(SERVER_SIDE_FOLDER):
+            if file.startswith(DEFAULT_IMAGE_NAME) and file.endswith(".png"):
+                os.remove(os.path.join(SERVER_SIDE_FOLDER, file))
 
 @dataclass
 class DeployConfig:
     # fmt: off
-    openvla_path: Union[str, Path] = "openvla/openvla-7b"               # HF Hub Path (or path to local run directory)
+    openvla_path: Union[str, Path] = OPENVLA_MODEL                      # HF Hub Path (or path to local run directory)
 
     # Server Configuration
     host: str = "0.0.0.0"                                               # Host IP Address
@@ -191,7 +204,8 @@ class DeployConfig:
 
 @draccus.wrap()
 def deploy(cfg: DeployConfig) -> None:
-    #clear_img_folder()
+    if args.save:
+        clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
     server.run(cfg.host, port=cfg.port)
 
