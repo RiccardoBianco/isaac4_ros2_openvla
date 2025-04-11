@@ -93,8 +93,9 @@ import omni.replicator.core as rep
 import os
 
 #For OpenVLA
-import json_numpy
 import numpy as np
+import json_numpy
+import yaml
 from PIL import Image
 import time
 import requests
@@ -103,7 +104,30 @@ import requests
 json_numpy.patch()
 
 # Define the URL of the server endpoint
-SERVER_URL = "http://0.0.0.0:8000/act"
+
+def set_server_url(config_path):
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    ip_address = config["ip_address"]
+    port = config["port"]
+    server_url = f'http://{ip_address}:{port}/act'
+    print(f"Server URL: {server_url}")
+    return server_url
+
+# Se l'user è "wanghan"
+user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+if user == "wanghan":
+    SERVER_URL = "http://0.0.0.0:8000/act"
+else:
+    print("Current working directory:", os.getcwd())
+
+    config_path = os.path.abspath("src/config.yaml")  # assume che tu sia in /root/isaac_ws
+    SERVER_URL = set_server_url(config_path)
+
+
+
 
 def send_request(image_path: str, instruction: str, unnorm_key: str):
     # Open the image
@@ -326,18 +350,22 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 
     ee_goal_deltas = [
-        [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # 10 cm x
-        [0.0, 0.1, 0.0, 0.0, 0.0, 0.0],  # 10 cm y
-        [0.0, 0.0, 0.1, 0.0, 0.0, 0.0],  # 10 cm z
-        [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
-        [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
-        [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
-        [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0],  # 90° x
-        [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0], # -90° x
-        [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0],  # 90° y
-        [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0], # -90° y
-        [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2],  # 90° z
-        [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2], # -90° z
+        # [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # 10 cm x
+        # [0.0, 0.1, 0.0, 0.0, 0.0, 0.0],  # 10 cm y
+        # [0.0, 0.0, 0.1, 0.0, 0.0, 0.0],  # 10 cm z
+        # [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
+        # [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
+        # [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
+        # [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0],  # 90° x
+        # [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0], # -90° x
+        # [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0],  # 90° y
+        # [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0], # -90° y
+        # [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2],  # 90° z
+        # [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2], # -90° z
+        [0.0, 0.0, 0.0, -np.pi/2, -np.pi/2, 0.0], # 90° x and y
+        #[0.0, 0.0, 0.0, np.pi/2, np.pi/2, 0.0], # -90° x and y
+        [0.0, 0.0, 0.0, -np.pi/2, 0.0, -np.pi/2], # 90° x and z
+        [0.0, 0.0, 0.0, np.pi/2, 0.0, np.pi/2], # -90° x and z
     ]
 
     ee_goal_deltas = torch.tensor(ee_goal_deltas, device=sim.device)
@@ -398,7 +426,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
             unnorm_key = "bridge_orig"
             # Send request to the server
-            send_request(image_path, instruction, unnorm_key)
+            #send_request(image_path, instruction, unnorm_key)
+
             # delta = res[:6]
             print(f"✅ Nuovo goal: {current_goal_idx}")
             delta = ee_goal_deltas[current_goal_idx]
@@ -485,6 +514,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         # update marker positions
+        # ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
+        # goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
         draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
 
