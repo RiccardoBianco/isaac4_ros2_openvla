@@ -128,7 +128,7 @@ class OpenVLAServer:
         print("The server is running.... Waiting for post requests")
 
 
-def save_image_with_progressive_filename(image, image_directory="path_to_save_images", base_filename="received_image", extension=".jpg", reset_folder=False):
+def save_image_with_progressive_filename(image, image_directory="server_side_images", base_filename="received_image", extension=".png", reset_folder=False):
     """
     Saves an image with a progressively higher filename.
     Optionally resets the folder (deletes all previous images).
@@ -140,11 +140,9 @@ def save_image_with_progressive_filename(image, image_directory="path_to_save_im
     - extension: File extension (default is ".jpg").
     - reset_folder: If True, deletes all existing images in the folder before saving (default is False).
     """
-    # Reset the folder by deleting existing images if specified
-    if reset_folder:
-        for file in os.listdir(image_directory):
-            if file.startswith(base_filename) and file.endswith(extension):
-                os.remove(os.path.join(image_directory, file))
+
+    # Create the image directory if it doesn't exist
+    os.makedirs(image_directory, exist_ok=True)
 
     # Find the highest number in existing filenames
     existing_files = [f for f in os.listdir(image_directory) if f.startswith(base_filename) and f.endswith(extension)]
@@ -174,9 +172,10 @@ def save_image_with_progressive_filename(image, image_directory="path_to_save_im
     return image_filename
 
 def clear_img_folder():
-    for file in os.listdir("path_to_save_images"):
-            if file.startswith("received_image") and file.endswith(".jpg"):
-                os.remove(os.path.join("path_to_save_images", file))
+    if os.path.exists("server_side_images"):
+        for file in os.listdir("server_side_images"):
+            if file.startswith("received_image") and file.endswith(".png"):
+                os.remove(os.path.join("server_side_images", file))
 
 @dataclass
 class DeployConfig:

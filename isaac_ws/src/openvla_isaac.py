@@ -91,6 +91,7 @@ from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import Camera, CameraCfg
 import omni.replicator.core as rep
 import os
+from PIL import Image
 
 #For OpenVLA
 import numpy as np
@@ -129,12 +130,12 @@ else:
 
 
 
-def send_request(image_path: str, instruction: str, unnorm_key: str):
-    # Open the image
-    image = Image.open(image_path)
+def send_request(image_array: np.ndarray, instruction: str, unnorm_key: str):
+    # # Open the image
+    # image = Image.open(image_path)
 
-    # Convert the image to a numpy array
-    image_array = np.array(image)
+    # # Convert the image to a numpy array
+    # image_array = np.array(image)
 
     # Prepare the payload with the image (as a numpy array) and instruction
     payload = {
@@ -149,8 +150,10 @@ def send_request(image_path: str, instruction: str, unnorm_key: str):
     # Check the response
     if response.status_code == 200:
         print("Response from server:", response.json())
+        return response.json()
     else:
         print("Error:", response.status_code, response.text)
+        return None
 
 from isaaclab.sensors.camera import Camera, CameraCfg
 
@@ -221,6 +224,47 @@ def apply_delta(position, orientation, delta):
     return new_pose
 
 
+def take_image(camera_index, camera, rep_writer):
+    if args_cli.save:
+        # Save images from camera at camera_index
+        # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
+        single_cam_data = convert_dict_to_backend(
+            {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
+        )
+
+        # Extract the other information
+        single_cam_info = camera.data.info[camera_index]
+
+        # Pack data back into replicator format to save them using its writer
+        rep_output = {"annotators": {}}
+        for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
+            if info is not None:
+                rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
+            else:
+                rep_output["annotators"][key] = {"render_product": {"data": data}}
+        # Save images
+        # Note: We need to provide On-time data for Replicator to save the images.
+        rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
+        rep_writer.write(rep_output)
+
+        ############ NEW STUFF ############
+        # Extract the image data (assuming 'rgb' is the key)
+        image_data = single_cam_data.get('rgb')
+        
+        if image_data is not None:
+            # Convert the Numpy array to an 8-bit unsigned integer format (0-255 range for RGB)
+            image_data = image_data.astype(np.uint8)
+            
+            # Convert the Numpy array to a PIL Image
+            pil_image = Image.fromarray(image_data)
+
+            image_array = np.array(pil_image)
+
+
+            # Return the path to the saved image
+            return image_array
+        
+    return None  # Return None if the image wasn't saved
 
 
 @configclass
@@ -308,6 +352,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
+
+    counter = 1
     
     #######################
     # CAMERA STUFF - Start
@@ -418,20 +464,31 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             # nuovo goal
 
             # prendo immagine e invio a OpenVLA
+            image_array = take_image(camera_index, camera, rep_writer)
             # Call OpenVLA
-            image_path = f"./isaac_ws/src/im_0.jpg"
+            #image_path = f"./isaac_ws/src/im_0.jpg" 
             instruction = "pick up the green zucchini"
+            counter += 1
 
             # Select an appropriate unnorm_key from the available dataset options
             #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
             unnorm_key = "bridge_orig"
-            # Send request to the server
-            #send_request(image_path, instruction, unnorm_key)
 
-            # delta = res[:6]
-            print(f"✅ Nuovo goal: {current_goal_idx}")
-            delta = ee_goal_deltas[current_goal_idx]
-            ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
+
+            #Send request to the server
+            res = send_request(image_array, instruction, unnorm_key)
+
+            if res is None:
+                print("Error in sending request to OpenVLA.")
+                continue
+
+            delta = res[:6]
+
+            ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta)
+            #print(f"✅ Nuovo goal: {current_goal_idx}")
+            #delta = ee_goal_deltas[current_goal_idx]
+            
+            #ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
             ee_goal = torch.tensor(ee_goal, device=sim.device).unsqueeze(0)
             ik_commands[:] = ee_goal
             joint_pos_des = joint_pos[:, robot_entity_cfg.joint_ids].clone()
@@ -476,28 +533,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         #    print("Received shape of rgb image        : ", camera.data.output["rgb"].shape)
         #print("-------------------------------")
 
-        # Extract camera data (TODO CHANGE CONDITION OF SAVING)
-        if args_cli.save and count % 150 == 0:
-            # Save images from camera at camera_index
-            # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
-            single_cam_data = convert_dict_to_backend(
-                {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
-            )
-
-            # Extract the other information
-            single_cam_info = camera.data.info[camera_index]
-
-            # Pack data back into replicator format to save them using its writer
-            rep_output = {"annotators": {}}
-            for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
-                if info is not None:
-                    rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
-                else:
-                    rep_output["annotators"][key] = {"render_product": {"data": data}}
-            # Save images
-            # Note: We need to provide On-time data for Replicator to save the images.
-            rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
-            rep_writer.write(rep_output)
 
         ####################################
         # CAMERA STUFF - End
@@ -570,9 +605,15 @@ def check_goal_reached(ik_commands, ee_pose_w, position_threshold, angle_thresho
     return False
 
 
+def clear_img_folder():
+    if os.path.exists("./isaac_ws/src/output/camera"):
+        for file in os.listdir("./isaac_ws/src/output/camera"):
+            if file.startswith("rgb") and file.endswith(".png"):
+                os.remove(os.path.join("./isaac_ws/src/output/camera", file))
 
 def main():
     """Main function."""
+    clear_img_folder()
     # Load kit helper
     sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
     sim = sim_utils.SimulationContext(sim_cfg)
