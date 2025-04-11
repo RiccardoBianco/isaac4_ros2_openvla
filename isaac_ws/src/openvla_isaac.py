@@ -29,9 +29,9 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument(
     "--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'."
 )
-#parser.add_argument(
-#    "--anti_aliasing", type=int, default=0, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA)."
-#)
+parser.add_argument(
+    "--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA)."
+)
 #parser.add_argument(
 #    "--denoiser", type=bool, default=False, help="Enable denoiser. Options: True (on), False (off)."
 #)
