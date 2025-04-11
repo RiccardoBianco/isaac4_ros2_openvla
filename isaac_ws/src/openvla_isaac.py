@@ -61,15 +61,6 @@ json_numpy.patch()
 
 # Define the URL of the server endpoint
 def set_server_url():
-    
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    ip_address = config["ip_address"]
-    port = config["port"]
-    server_url = f'http://{ip_address}:{port}/act'
-    print(f"Server URL: {server_url}")
-
     # if user is "wanghan"
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
 
@@ -79,7 +70,14 @@ def set_server_url():
         print("Current working directory:", os.getcwd())
 
         config_path = os.path.abspath("src/config.yaml")  # assuming you are in /root/isaac_ws folder
-        server_url = set_server_url(config_path)
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        ip_address = config["ip_address"]
+        port = config["port"]
+        server_url = f'http://{ip_address}:{port}/act'
+        print(f"Server URL: {server_url}")
+
     return server_url
 
 
