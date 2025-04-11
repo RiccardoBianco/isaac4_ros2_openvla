@@ -1,65 +1,30 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
 """
-This script demonstrates how to use the differential inverse kinematics controller with the simulator.
-
-The differential IK controller can be configured in different modes. It uses the Jacobians computed by
-PhysX. This helps perform parallelized computation of the inverse kinematics.
-
-.. code-block:: bash
-
     # Usage
-    ./isaaclab.sh -p scripts/tutorials/05_controllers/run_diff_ik.py --num_envs 1
+    isaac_lab/isaaclab.sh -p src/openvla_isaac.py  --enable_cameras --save
 
 """
 
-"""Launch Isaac Sim Simulator first."""
 
 import argparse
-
 from isaaclab.app import AppLauncher
+
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Tutorial on using the differential IK controller.")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to spawn.")
-parser.add_argument(
-    "--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'."
-)
-parser.add_argument(
-    "--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA)."
-)
-#parser.add_argument(
-#    "--denoiser", type=bool, default=False, help="Enable denoiser. Options: True (on), False (off)."
-#)
-# For Cameras
-parser.add_argument(
-    "--save",
-    action="store_true",
-    default=False,
-    help="Save the data from camera at index specified by ``--camera_id``.",
-)
-parser.add_argument(
-    "--camera_id",
-    type=int,
-    choices={0, 1},
-    default=0,
-    help=(
-        "The camera ID to use for displaying points or saving the camera data. Default is 0."
-        " The viewport will always initialize with the perspective of camera 0."
-    ),
-)
+parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
+parser.add_argument("--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA).")
+parser.add_argument("--save", action="store_true", default=False, help="Save the data from camera at index specified by ``--camera_id``.",)
+parser.add_argument("--camera_id", type=int, choices={0, 1}, default=0, help=("The camera ID to use for displaying points or saving the camera data. Default is 0." " The viewport will always initialize with the perspective of camera 0."),)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli = parser.parse_args()
-
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+
 
 """Rest everything follows."""
 
@@ -67,6 +32,10 @@ import torch
 import os
 import numpy as np
 from scipy.spatial.transform import Rotation
+from PIL import Image
+import json_numpy
+import yaml
+import requests
 
 
 import isaaclab.sim as sim_utils
@@ -80,33 +49,19 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms
 from isaaclab.utils import convert_dict_to_backend
-import isaacsim.core.utils.prims as prim_utils
 import omni.replicator.core as rep
-
-from isaaclab.utils import convert_dict_to_backend
-##
-# Pre-defined configs
-##
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
-from isaaclab.sensors.camera import Camera, CameraCfg
-import omni.replicator.core as rep
-import os
-from PIL import Image
+from isaaclab.sensors.camera import CameraCfg
 
-#For OpenVLA
-import numpy as np
-import json_numpy
-import yaml
-from PIL import Image
-import time
-import requests
+
+
 
 # Apply patch for handling numpy arrays in JSON
 json_numpy.patch()
 
 # Define the URL of the server endpoint
-
-def set_server_url(config_path):
+def set_server_url():
+    
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
@@ -114,35 +69,25 @@ def set_server_url(config_path):
     port = config["port"]
     server_url = f'http://{ip_address}:{port}/act'
     print(f"Server URL: {server_url}")
+
+    # if user is "wanghan"
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+    if user == "wanghan":
+        server_url = "http://0.0.0.0:8000/act"
+    else:
+        print("Current working directory:", os.getcwd())
+
+        config_path = os.path.abspath("src/config.yaml")  # assuming you are in /root/isaac_ws folder
+        server_url = set_server_url(config_path)
     return server_url
 
-# Se l'user è "wanghan"
-user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
 
-if user == "wanghan":
-    SERVER_URL = "http://0.0.0.0:8000/act"
-else:
-    print("Current working directory:", os.getcwd())
-
-    config_path = os.path.abspath("src/config.yaml")  # assume che tu sia in /root/isaac_ws
-    SERVER_URL = set_server_url(config_path)
+SERVER_URL = set_server_url()
 
 
 
-
-def send_request(image_array: np.ndarray, instruction: str, unnorm_key: str):
-    # # Open the image
-    # image = Image.open(image_path)
-
-    # # Convert the image to a numpy array
-    # image_array = np.array(image)
-
-    # Prepare the payload with the image (as a numpy array) and instruction
-    payload = {
-        "image": image_array,  # Sending as numpy array, no conversion to list
-        "instruction": instruction,
-        "unnorm_key": unnorm_key  # Add the unnorm_key to the payload
-    }
+def send_request(payload):
 
     # Send POST request to the server
     response = requests.post(SERVER_URL, json=payload)
@@ -155,29 +100,6 @@ def send_request(image_array: np.ndarray, instruction: str, unnorm_key: str):
         print("Error:", response.status_code, response.text)
         return None
 
-from isaaclab.sensors.camera import Camera, CameraCfg
-
-
-        # ee_pose = actions["ee_pose"]
-        # current_pos = current_ee[:3] # position
-        # pos_delta = ee_pose[:3]  # delta[:3]
-        # target_pos = current_pos + pos_delta
-
-        # current_orient_xyzw = current_ee[3:]  # current orientation as x, y, z, w
-        # orientation_delta_euler = ee_pose[
-        #     3:
-        # ]  # Delta in orientation as predicted by the model in euler angles
-
-        # # Convert relative orientation to absolute orientation
-        # current_orientation = R.from_quat(current_orient_xyzw)
-        # orientation_delta = R.from_euler("xyz", orientation_delta_euler)
-
-        # target_orientation = current_orientation * orientation_delta
-        # target_orientation_xyzw = target_orientation.as_quat()
-
-
-
-        # x,y,z = target_pos
 
 def apply_delta(position, orientation, delta):
     
@@ -247,24 +169,16 @@ def take_image(camera_index, camera, rep_writer):
         rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
         rep_writer.write(rep_output)
 
-        ############ NEW STUFF ############
         # Extract the image data (assuming 'rgb' is the key)
         image_data = single_cam_data.get('rgb')
         
         if image_data is not None:
-            # Convert the Numpy array to an 8-bit unsigned integer format (0-255 range for RGB)
             image_data = image_data.astype(np.uint8)
-            
-            # Convert the Numpy array to a PIL Image
             pil_image = Image.fromarray(image_data)
-
             image_array = np.array(pil_image)
-
-
-            # Return the path to the saved image
             return image_array
-        
-    return None  # Return None if the image wasn't saved
+
+    return None 
 
 
 @configclass
@@ -294,7 +208,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
     )
     
-
     sugar_box = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/SugarBox",
         spawn=sim_utils.UsdFileCfg(
@@ -338,7 +251,6 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-
     # articulation
     if args_cli.robot == "franka_panda":
         robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
@@ -347,13 +259,13 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
+
+
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     """Runs the simulation loop."""
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
-
-    counter = 1
     
     #######################
     # CAMERA STUFF - Start
@@ -445,12 +357,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 
     goal_reached = True
-    position_threshold = 0.0005  
-    angle_threshold = 0.1
 
     while simulation_app.is_running():
 
         if count == 0:
+            # Initialization - move to home position
             joint_pos = robot.data.default_joint_pos.clone()
             joint_vel = robot.data.default_joint_vel.clone()
             robot.write_joint_state_to_sim(joint_pos, joint_vel)
@@ -463,31 +374,33 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         if goal_reached and count != 0:
             # nuovo goal
 
-            # prendo immagine e invio a OpenVLA
+            ####################################
+            ###### SEND REQUEST TO SERVER ######
+            ####################################
+
+            # take image
             image_array = take_image(camera_index, camera, rep_writer)
-            # Call OpenVLA
-            #image_path = f"./isaac_ws/src/im_0.jpg" 
-            instruction = "pick up the green zucchini"
-            counter += 1
 
-            # Select an appropriate unnorm_key from the available dataset options
-            #unnorm_key = "ucsd_kitchen_dataset_converted_externally_to_rlds"  # Replace with the dataset you want
-            unnorm_key = "bridge_orig"
-
+            payload = {
+                "image": image_array,  # Sending as numpy array, no conversion to list
+                "instruction": "pick up the green zucchini",
+                "unnorm_key": "bridge_orig"  # Add the unnorm_key to the payload
+            }
 
             #Send request to the server
-            res = send_request(image_array, instruction, unnorm_key)
+            res = send_request(payload)
 
             if res is None:
                 print("Error in sending request to OpenVLA.")
                 continue
+            
+            #####################################
+
 
             delta = res[:6]
-
             ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta)
             #print(f"✅ Nuovo goal: {current_goal_idx}")
             #delta = ee_goal_deltas[current_goal_idx]
-            
             #ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
             ee_goal = torch.tensor(ee_goal, device=sim.device).unsqueeze(0)
             ik_commands[:] = ee_goal
@@ -521,42 +434,28 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # perform step
         sim.step()
 
-        ####################################
-        # CAMERA STUFF - Start
-        ####################################
-
         # Update camera data
         camera.update(dt=sim.get_physics_dt())
-        # Print camera info
-        #print(camera)
-        #if "rgb" in camera.data.output.keys():
-        #    print("Received shape of rgb image        : ", camera.data.output["rgb"].shape)
-        #print("-------------------------------")
-
-
-        ####################################
-        # CAMERA STUFF - End
-        ####################################
 
         # update sim-time
-
         count += 1
         # update buffers
         scene.update(sim_dt)
 
-        goal_reached = check_goal_reached(ik_commands, ee_pose_w, position_threshold, angle_threshold)
+        goal_reached = check_goal_reached(ik_commands, ee_pose_w)
         
-
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
-        # update marker positions
+
+        # TODO remove this two lines
         # ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         # goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
+        # update marker positions 
         draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
 
 
 def draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker):
-    quat_correction_np = Rotation.from_euler('x', 180, degrees=True).as_quat()  # [x, y, z, w]
+    quat_correction_np = Rotation.from_euler('x', 180, degrees=True).as_quat()  # TODO check if we need to rotate the marker
     quat_correction = torch.tensor(quat_correction_np, dtype=torch.float32, device=ee_pose_w.device)
 
     def apply_marker_rotation(quat_batch, quat_corr):
@@ -573,16 +472,16 @@ def draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker):
         # Torna a torch tensor
         return torch.tensor(r_combined.as_quat(), dtype=torch.float32, device=quat_batch.device)
 
-    # --- Applica correzione ai quaternioni ---
+    # ---Apply correction to quaternions ---
     corrected_ee_quat = apply_marker_rotation(ee_pose_w[:, 3:7], quat_correction)
     corrected_goal_quat = apply_marker_rotation(ik_commands[:, 3:7], quat_correction)
 
-    # --- Visualizza i marker con orientamento corretto ---
+    # --- Markers with corrected visualization  ---
     ee_marker.visualize(ee_pose_w[:, 0:3], corrected_ee_quat)
     goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, corrected_goal_quat)
 
 
-def check_goal_reached(ik_commands, ee_pose_w, position_threshold, angle_threshold):
+def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.1):
     goal_pos = ik_commands[:, 0:3]
     goal_quat = ik_commands[:, 3:7]
     current_pos = ee_pose_w[:, 0:3]
