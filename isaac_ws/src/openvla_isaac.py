@@ -4,6 +4,9 @@
 
 """
 
+# Scipy -> quaternion -> scalar last order [x, y, z, w]
+# Iaaclab -> quaternion -> scalar first order [w, x, y, z]
+
 OPENVLA_INSTRUCTION = "Pick up the yellow box"
 OPENVLA_UNNORM_KEY = "bridge_orig"
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
@@ -99,24 +102,23 @@ def send_request(payload):
         return None
 
 
+def scalar_first_to_last(q):
+    w, x, y, z = q
+    return [x, y, z, w]
+
+
+def scalar_last_to_first(q):
+    x, y, z, w = q
+    return [w, x, y, z]
+
+
 def apply_delta(position, orientation, delta):
     
     position = position.squeeze(0)
     orientation = orientation.squeeze(0)
 
-    pos_list = list(position)
-    orient = list(orientation)
-    print(f"Prev position in base frame: {pos_list[0]:.3}, {pos_list[1]:.3}, {pos_list[2]:.3}")
-    print(f"Prev orientation in base frame: {orient[0]:.3}, {orient[1]:.3}, {orient[2]:.3}, {orient[3]:.3}")
-    # print(f"prev orientation: {orientation}")
-    print(f"Delta position in ee frame: {delta[:3]}")
-    print(f"Delta orientation in ee frame: {delta[3:6]}")
 
-
-    R = Rotation.from_quat(orientation).as_matrix()
-    print("X local:", R[:, 0])
-    print("Y local:", R[:, 1])
-    print("Z local:", R[:, 2])
+    R = Rotation.from_quat(scalar_first_to_last(orientation)).as_matrix()
 
     # Compute delta in the world frame
     world_delta = R @ np.array(delta[:3])
@@ -124,23 +126,19 @@ def apply_delta(position, orientation, delta):
 
 
     # Apply rotation delta (Euler angles)
-    delta_rot = Rotation.from_euler('zyx', delta[3:6]) # TODO change xyz
+    r_x = Rotation.from_euler('x', delta[3])
+    r_y = Rotation.from_euler('y', delta[4])
+    r_z = Rotation.from_euler('z', delta[5])
+
+    # Apply the rotation to the current orientation
+    delta_rot = r_x * r_y * r_z # first apply x, then y, then z
+    # delta_rot = r_z* r_y * r_x # first apply z, then y, then x
+
+
     new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
-
-
-    new_pos_list = list(new_position)
-    new_orient_list = list(new_orientation)
-    print(f"New position in base frame: {new_pos_list[0]:.3}, {new_pos_list[1]:.3}, {new_pos_list[2]:.3}")
-    print(f"New orientation in base frame: {new_orient_list[0]:.3}, {new_orient_list[1]:.3}, {new_orient_list[2]:.3}, {new_orient_list[3]:.3}")
-    # print(f"new_orientation: {new_orientation}")
-    R_ee_to_world = R
-    R_world_to_ee = R_ee_to_world.T  # Inversa della rotazione
-    displacement_in_ee = R_world_to_ee @ (new_position - position)
-    print("Displacement in EE frame:", displacement_in_ee)
+    new_orientation = scalar_last_to_first(new_orientation) # Needed for isaac sim
 
     new_pose = np.concatenate([new_position, new_orientation])  # shape (7,)
-
-
     return new_pose
 
 
@@ -312,15 +310,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
         # [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
         # [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
-        # [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0],  # 90° x
-        # [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0], # -90° x
-        # [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0],  # 90° y
-        # [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0], # -90° y
-        # [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2],  # 90° z
-        # [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2], # -90° z
-        [0.0, 0.0, 0.0, -np.pi/2, -np.pi/2, 0.0], # 90° x and y
-        #[0.0, 0.0, 0.0, np.pi/2, np.pi/2, 0.0], # -90° x and y
-        [0.0, 0.0, 0.0, -np.pi/2, 0.0, -np.pi/2], # 90° x and z
+        # [0.0, 0.0, 0.0, np.pi/2, 0.0, 0.0],  # 90° x
+        # [0.0, 0.0, 0.0, -np.pi/2, 0.0, 0.0], # -90° x
+        # [0.0, 0.0, 0.0, 0.0, np.pi/2, 0.0],  # 90° y
+        # [0.0, 0.0, 0.0, 0.0, -np.pi/2, 0.0], # -90° y
+        # [0.0, 0.0, 0.0, 0.0, 0.0, np.pi/2],  # 90° z
+        # [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2], # -90° z
+        # [0.0, 0.0, 0.0, np.pi/2, np.pi/2, 0.0], # 90° x and y
+        # [0.0, 0.0, 0.0, -np.pi/2, -np.pi/2, 0.0], # -90° x and y
+        [0.0, 0.0, 0.0, np.pi/2, np.pi/2, np.pi/2], # 90° y and z
+        [0.0, 0.0, 0.0, -np.pi/2, -np.pi, -np.pi/2], # 90° x and z
         [0.0, 0.0, 0.0, np.pi/2, 0.0, np.pi/2], # -90° x and z
     ]
 
@@ -390,8 +389,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             }
 
             #Send request to the server
+            print("Sending request to OpenVLA...")
             res = send_request(payload)
-
             if res is None:
                 print("Error in sending request to OpenVLA.")
                 continue
@@ -451,40 +450,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
 
-        # TODO remove this two lines
-        # ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
-        # goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
         # update marker positions 
-        #draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
+        ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
+        goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
-
-def draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker):
-    quat_correction_np = Rotation.from_euler('x', 180, degrees=True).as_quat()  # TODO check if we need to rotate the marker
-    quat_correction = torch.tensor(quat_correction_np, dtype=torch.float32, device=ee_pose_w.device)
-
-    def apply_marker_rotation(quat_batch, quat_corr):
-        """Applica rotazione correttiva (composizione di quaternioni)"""
-        # Converti in numpy per usare scipy
-        quat_batch_np = quat_batch.cpu().numpy()  # (N, 4)
-        quat_corr_np = quat_corr.cpu().numpy()    # (4,)
-
-        # Composizione: R_correction * R_original
-        r_orig = Rotation.from_quat(quat_batch_np)
-        r_corr = Rotation.from_quat(quat_corr_np)
-        r_combined = r_corr * r_orig
-
-        # Torna a torch tensor
-        return torch.tensor(r_combined.as_quat(), dtype=torch.float32, device=quat_batch.device)
-
-    # ---Apply correction to quaternions ---
-    corrected_ee_quat = apply_marker_rotation(ee_pose_w[:, 3:7], quat_correction)
-    corrected_goal_quat = apply_marker_rotation(ik_commands[:, 3:7], quat_correction)
-
-    # --- Markers with corrected visualization  ---
-    ee_marker.visualize(ee_pose_w[:, 0:3], corrected_ee_quat)
-    goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, corrected_goal_quat)
-
+     
 
 def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.1):
     goal_pos = ik_commands[:, 0:3]
