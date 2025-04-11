@@ -4,10 +4,13 @@
 
 """
 
+OPENVLA_INSTRUCTION = "Pick up the yellow box"
+OPENVLA_UNNORM_KEY = "bridge_orig"
+MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
+
 
 import argparse
 from isaaclab.app import AppLauncher
-
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Tutorial on using the differential IK controller.")
@@ -26,7 +29,6 @@ app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
 
 
-"""Rest everything follows."""
 
 import torch
 import os
@@ -52,8 +54,6 @@ from isaaclab.utils import convert_dict_to_backend
 import omni.replicator.core as rep
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import CameraCfg
-
-
 
 
 # Apply patch for handling numpy arrays in JSON
@@ -354,11 +354,13 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Simulation loop
 
 
+
     goal_reached = True
 
     while simulation_app.is_running():
 
         if count == 0:
+
             # Initialization - move to home position
             joint_pos = robot.data.default_joint_pos.clone()
             joint_vel = robot.data.default_joint_vel.clone()
@@ -367,6 +369,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             diff_ik_controller.reset()
             diff_ik_controller.set_command(ik_commands)
+            # set gripper position
+            gripper_pos_des = torch.tensor([[1.0, 1.0]], device=sim.device)
 
 
         if goal_reached and count != 0:
@@ -381,8 +385,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             payload = {
                 "image": image_array,  # Sending as numpy array, no conversion to list
-                "instruction": "pick up the green zucchini",
-                "unnorm_key": "bridge_orig"  # Add the unnorm_key to the payload
+                "instruction": OPENVLA_INSTRUCTION,
+                "unnorm_key": OPENVLA_UNNORM_KEY  # Add the unnorm_key to the payload
             }
 
             #Send request to the server
@@ -396,6 +400,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 
             delta = res[:6]
+            gripper_pos_des = torch.tensor([[res[6]*MAX_GRIPPER_POSE, res[6]*MAX_GRIPPER_POSE]], device=sim.device)
             ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta)
             #print(f"✅ Nuovo goal: {current_goal_idx}")
             #delta = ee_goal_deltas[current_goal_idx]
@@ -424,10 +429,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         # calcolo comando IK
 
-        joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
+        
 
+        joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
         # apply actions
-        robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
+        joint_pos_des = torch.cat((joint_pos_des, gripper_pos_des), dim=1).to(dtype=torch.float32)
+        robot.set_joint_position_target(joint_pos_des, joint_ids=[0, 1, 2, 3, 4, 5, 6, 7, 8])
         scene.write_data_to_sim()
         # perform step
         sim.step()
@@ -449,7 +456,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
         # update marker positions 
-        draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
+        #draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker)
 
 
 def draw_markers(ee_pose_w, ik_commands, scene, ee_marker, goal_marker):
