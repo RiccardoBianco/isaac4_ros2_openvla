@@ -57,7 +57,7 @@ OPENVLA_MODEL = "openvla/openvla-7b"
 
 # === Command Line Arguments ===
 parser = argparse.ArgumentParser(description="Get command line arguments")
-parser.add_argument('--save', action='store_true', help="Flag to save the images (server-side)")
+parser.add_argument('--save', default=0, help="Flag to save the images (server-side)")
 # Parse the arguments
 args = parser.parse_args()
 
