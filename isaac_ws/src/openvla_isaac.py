@@ -1,15 +1,16 @@
 """
     # Usage
-    isaac_lab/isaaclab.sh -p src/openvla_isaac.py  --enable_cameras --save
+    ~/isaac_ws/isaac_lab/isaaclab.sh -p ~/isaac_ws/src/openvla_isaac.py  --enable_cameras --save
 
 """
 
 # Scipy -> quaternion -> scalar last order [x, y, z, w]
 # Iaaclab -> quaternion -> scalar first order [w, x, y, z]
 
-OPENVLA_INSTRUCTION = "Pick up the yellow box"
+OPENVLA_INSTRUCTION = "Pick up the red box"
 OPENVLA_UNNORM_KEY = "bridge_orig"
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
+VISUALIZE_MARKERS = False
 
 
 import argparse
@@ -58,7 +59,8 @@ import omni.replicator.core as rep
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import CameraCfg
 
-from pxr import Usd, UsdPhysics, UsdGeom
+from pxr import Usd, UsdPhysics, UsdGeom, UsdShade
+import omni.usd
 
 
 # Apply patch for handling numpy arrays in JSON
@@ -74,7 +76,7 @@ def set_server_url():
     else:
         print("Current working directory:", os.getcwd())
 
-        config_path = os.path.abspath("src/config.yaml")  # assuming you are in /root/isaac_ws folder
+        config_path = os.path.abspath("./isaac_ws/src/config.yaml")  # assuming you are in /root/isaac_ws folder
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
@@ -110,6 +112,24 @@ def add_rigid_body_api(usd_file_path):
     stage.Save()
 
 #######################################
+
+
+def assign_material(object_path, material_path):
+    stage = omni.usd.get_context().get_stage()
+
+    # Prendi la primitiva della tabella
+    object_prim = stage.GetPrimAtPath(object_path)
+    
+    # Prendi il materiale esistente
+    material_prim = stage.GetPrimAtPath(material_path)
+
+    if object_prim and material_prim:
+        material = UsdShade.Material(material_prim)
+        UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+        print("Materiale assegnato correttamente a ", object_path)
+    else:
+        print("Errore: Primitiva o materiale non trovati.")
+
 
 def send_request(payload):
 
@@ -204,11 +224,17 @@ def take_image(camera_index, camera, rep_writer):
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a cart-pole scene."""
 
-    # # ground plane
+    # # # ground plane
+    # ground = AssetBaseCfg(
+    #     prim_path="/World/defaultGroundPlane",
+    #     spawn=sim_utils.GroundPlaneCfg(
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+    # )
     ground = AssetBaseCfg(
         prim_path="/World/defaultGroundPlane",
-        spawn=sim_utils.GroundPlaneCfg(
-
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
     )
@@ -220,36 +246,45 @@ class TableTopSceneCfg(InteractiveSceneCfg):
 
     # # mount
     table = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Table",
+        prim_path="/World/Table",
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
-    )
-    
-    sugar_box = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/SugarBox",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd", scale=(1.0, 1.0, 1.0)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.0)),
+
     )
 
-    craker_box = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/CrakerBox",
+    cube = AssetBaseCfg(
+        prim_path="/World/Cube",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", scale=(1.0, 1.0, 1.0)
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.05, 0.1, 0.05)
         ),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
     )
+    
+    # sugar_box = AssetBaseCfg(
+    #     prim_path="/World/SugarBox",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd", scale=(1.0, 1.0, 1.0)
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.0)),
+    # )
 
-    tomato_can = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/TomatoCan",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd", scale=(1.0, 1.0, 1.0)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, -0.3, 0.0)),
-    )
+    # craker_box = AssetBaseCfg(
+    #     prim_path="/World/CrakerBox",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", scale=(1.0, 1.0, 1.0)
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
+    # )
+
+    # tomato_can = AssetBaseCfg(
+    #     prim_path="/World/TomatoCan",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd", scale=(1.0, 1.0, 1.0)
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, -0.3, 0.0)),
+    # )
 
     camera = CameraCfg(
         prim_path="/World/CameraSensor",
@@ -264,25 +299,25 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         colorize_instance_segmentation=True,
         spawn=sim_utils.PinholeCameraCfg(
             #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-            focal_length=16.0,         # Wider view
-            focus_distance=1000.0,     # Farther focus (everything is sharp)
+            focal_length=24.0,         # Wider view
+            focus_distance=400.0,     # Farther focus (everything is sharp)
             horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
         ),
     )
 
-    banana = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/Banana",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=os.path.join(os.getcwd(), "isaac_ws/assets/011_banana.usd"), scale=(1.0, 1.0, 1.0)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.7, -0.3, 0.1)),
-    ) 
+    # banana = AssetBaseCfg(
+    #     prim_path="/World/Banana",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=os.path.join(os.getcwd(), "isaac_ws/assets/011_banana.usd"), scale=(1.0, 1.0, 1.0)
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
+    # ) 
 
     # articulation
     if args_cli.robot == "franka_panda":
-        robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="/World/Robot")
     elif args_cli.robot == "ur10":
-        robot = UR10_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        robot = UR10_CFG.replace(prim_path="/World/Robot")
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
@@ -312,8 +347,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     )
 
     # Camera positions, targets, orientations
-    camera_positions = torch.tensor([[1.5, 1.5, 1.5]], device=sim.device)
-    camera_targets = torch.tensor([[0.0, 0.0, 0.0]], device=sim.device)
+    camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=sim.device)
+    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=sim.device)
     # These orientations are in ROS-convention, and will position the cameras to view the origin
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     # Index of the camera to use for visualization and saving
@@ -328,10 +363,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
 
     # Markers
-    frame_marker_cfg = FRAME_MARKER_CFG.copy()
-    frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-    ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
-    goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
+
+    if VISUALIZE_MARKERS:
+        frame_marker_cfg = FRAME_MARKER_CFG.copy()
+        frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
+        goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
 
 
     ee_goal_deltas = [
@@ -359,7 +396,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     current_goal_idx = 0
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
-    ik_commands[:] = torch.tensor([0.5, 0.0, 0.7, 0, 1, 0, 0], device=sim.device) # TODO check if necessary
+    ik_commands[:] = torch.tensor([0.5, 0.0, 0.4, 0, 1, 0, 0], device=sim.device) # TODO check if necessary
 
     # Specify robot-specific parameters
     if args_cli.robot == "franka_panda":
@@ -386,6 +423,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Create BANANA
     folder_path = os.getcwd()
     add_rigid_body_api(usd_file_path=os.path.join(folder_path, "isaac_ws/assets/011_banana.usd"))
+    
+    assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
+    assign_material(object_path="/World/Cube", material_path="/World/Robot/panda_leftfinger/visuals/Looks/RubberRed")
 
     goal_reached = True
 
@@ -485,8 +525,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 
         # update marker positions 
-        ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
-        goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
+        if VISUALIZE_MARKERS:
+            ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
+            goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
 
      
 
