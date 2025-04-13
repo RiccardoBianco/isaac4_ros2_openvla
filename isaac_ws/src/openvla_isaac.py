@@ -58,6 +58,8 @@ import omni.replicator.core as rep
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import CameraCfg
 
+from pxr import Usd, UsdPhysics, UsdGeom
+
 
 # Apply patch for handling numpy arrays in JSON
 json_numpy.patch()
@@ -86,7 +88,28 @@ def set_server_url():
 
 SERVER_URL = set_server_url()
 
+#######################################
 
+def add_rigid_body_api(usd_file_path):
+    # Open the USD stage
+    stage = Usd.Stage.Open(usd_file_path)
+
+    # Get the default prim
+    default_prim = stage.GetDefaultPrim()
+
+    # Check if default prim exists and if RigidBodyAPI already exists
+    if default_prim and not default_prim.HasAPI(UsdPhysics.RigidBodyAPI):
+        # Add RigidBodyAPI
+        rigid_body_api = UsdPhysics.RigidBodyAPI.Apply(default_prim)
+        if rigid_body_api:
+            print(f"Added RigidBodyAPI to {usd_file_path}")
+            # Save the changes
+            stage.GetRootLayer().Save()
+            
+    UsdPhysics.CollisionAPI.Apply(default_prim)
+    stage.Save()
+
+#######################################
 
 def send_request(payload):
 
@@ -247,6 +270,14 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
     )
 
+    banana = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Banana",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=os.path.join(os.getcwd(), "isaac_ws/assets/011_banana.usd"), scale=(1.0, 1.0, 1.0)
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.7, -0.3, 0.1)),
+    ) 
+
     # articulation
     if args_cli.robot == "franka_panda":
         robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
@@ -352,7 +383,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     count = 0
     # Simulation loop
 
-
+    # Create BANANA
+    folder_path = os.getcwd()
+    add_rigid_body_api(usd_file_path=os.path.join(folder_path, "isaac_ws/assets/011_banana.usd"))
 
     goal_reached = True
 
