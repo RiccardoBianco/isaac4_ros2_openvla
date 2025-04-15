@@ -1,0 +1,509 @@
+# TODO Disabilitare markers
+# TODO cambiare oggetto
+# TODO ogni volta che resetta la task salvo in una nuova cartella le immagini con numero di task progressivo
+# TODO eventualmente cambiare posizione della camera quando c'è il reset della scena
+
+"""
+Script to run an environment with a pick and lift state machine.
+
+The state machine is implemented in the kernel function `infer_state_machine`.
+It uses the `warp` library to run the state machine in parallel on the GPU.
+
+.. code-block:: bash
+
+    ./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/sm_pick.py --enable_cameras --save
+
+"""
+
+"""Launch Omniverse Toolkit first."""
+
+import argparse
+
+from isaaclab.app import AppLauncher
+
+# add argparse arguments
+parser = argparse.ArgumentParser(description="Pick and lift state machine for lift environments.")
+parser.add_argument(
+    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
+)
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
+parser.add_argument("--camera_id", type=int, choices={0, 1}, default=0, help=("The camera ID to use for displaying points or saving the camera data. Default is 0." " The viewport will always initialize with the perspective of camera 0."),)
+parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
+parser.add_argument("--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA).")
+parser.add_argument("--save", action="store_true", default=False, help="Save the data from camera at index specified by ``--camera_id``.",)
+# append AppLauncher cli args
+AppLauncher.add_app_launcher_args(parser)
+# parse the arguments
+args_cli = parser.parse_args()
+
+# launch omniverse app
+app_launcher = AppLauncher(headless=args_cli.headless, enable_cameras=args_cli.enable_cameras)
+simulation_app = app_launcher.app
+
+"""Rest everything else."""
+
+import gymnasium as gym
+import torch
+from collections.abc import Sequence
+from PIL import Image
+
+import warp as wp
+import numpy as np
+import os
+
+from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
+
+import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+
+
+from isaaclab.assets import RigidObjectCfg, AssetBaseCfg
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
+import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.manager_based.manipulation.lift import mdp
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+import isaaclab.sim as sim_utils
+from isaaclab.envs import ManagerBasedRLEnv
+import omni.replicator.core as rep
+
+##
+# Pre-defined configs
+##
+
+from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
+from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
+import omni.usd
+from isaaclab.sensors.camera import CameraCfg
+from isaaclab.utils import convert_dict_to_backend
+
+
+from pxr import UsdShade
+
+# initialize warp
+wp.init()
+
+class GripperState:
+    """States for the gripper."""
+
+    OPEN = wp.constant(1.0)
+    CLOSE = wp.constant(-1.0)
+
+
+class PickSmState:
+    """States for the pick state machine."""
+
+    REST = wp.constant(0)
+    APPROACH_ABOVE_OBJECT = wp.constant(1)
+    APPROACH_OBJECT = wp.constant(2)
+    GRASP_OBJECT = wp.constant(3)
+    LIFT_OBJECT = wp.constant(4)
+
+
+class PickSmWaitTime:
+    """Additional wait times (in s) for states for before switching."""
+
+    REST = wp.constant(0.2)
+    APPROACH_ABOVE_OBJECT = wp.constant(0.5)
+    APPROACH_OBJECT = wp.constant(0.6)
+    GRASP_OBJECT = wp.constant(0.3)
+    LIFT_OBJECT = wp.constant(1.0)
+
+
+@wp.func
+def distance_below_threshold(current_pos: wp.vec3, desired_pos: wp.vec3, threshold: float) -> bool:
+    return wp.length(current_pos - desired_pos) < threshold
+
+
+@wp.kernel
+def infer_state_machine(
+    dt: wp.array(dtype=float),
+    sm_state: wp.array(dtype=int),
+    sm_wait_time: wp.array(dtype=float),
+    ee_pose: wp.array(dtype=wp.transform),
+    object_pose: wp.array(dtype=wp.transform),
+    des_object_pose: wp.array(dtype=wp.transform),
+    des_ee_pose: wp.array(dtype=wp.transform),
+    gripper_state: wp.array(dtype=float),
+    offset: wp.array(dtype=wp.transform),
+    position_threshold: float,
+):
+    # retrieve thread id
+    tid = wp.tid()
+    # retrieve state machine state
+    state = sm_state[tid]
+    # decide next state
+    if state == PickSmState.REST:
+        des_ee_pose[tid] = ee_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.REST:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.APPROACH_ABOVE_OBJECT
+            sm_wait_time[tid] = 0.0
+    elif state == PickSmState.APPROACH_ABOVE_OBJECT:
+        des_ee_pose[tid] = wp.transform_multiply(offset[tid], object_pose[tid])
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.APPROACH_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.APPROACH_OBJECT:
+        des_ee_pose[tid] = object_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.GRASP_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.GRASP_OBJECT:
+        des_ee_pose[tid] = object_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.GRASP_OBJECT:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.LIFT_OBJECT
+            sm_wait_time[tid] = 0.0
+    elif state == PickSmState.LIFT_OBJECT:
+        des_ee_pose[tid] = des_object_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.LIFT_OBJECT
+                sm_wait_time[tid] = 0.0
+    # increment wait time
+    sm_wait_time[tid] = sm_wait_time[tid] + dt[tid]
+
+
+class PickAndLiftSm:
+    """A simple state machine in a robot's task space to pick and lift an object.
+
+    The state machine is implemented as a warp kernel. It takes in the current state of
+    the robot's end-effector and the object, and outputs the desired state of the robot's
+    end-effector and the gripper. The state machine is implemented as a finite state
+    machine with the following states:
+
+    1. REST: The robot is at rest.
+    2. APPROACH_ABOVE_OBJECT: The robot moves above the object.
+    3. APPROACH_OBJECT: The robot moves to the object.
+    4. GRASP_OBJECT: The robot grasps the object.
+    5. LIFT_OBJECT: The robot lifts the object to the desired pose. This is the final state.
+    """
+
+    def __init__(self, dt: float, num_envs: int, device: torch.device | str = "cpu", position_threshold=0.01):
+        """Initialize the state machine.
+
+        Args:
+            dt: The environment time step.
+            num_envs: The number of environments to simulate.
+            device: The device to run the state machine on.
+        """
+        # save parameters
+        self.dt = float(dt)
+        self.num_envs = num_envs
+        self.device = device
+        self.position_threshold = position_threshold
+        # initialize state machine
+        self.sm_dt = torch.full((self.num_envs,), self.dt, device=self.device)
+        self.sm_state = torch.full((self.num_envs,), 0, dtype=torch.int32, device=self.device)
+        self.sm_wait_time = torch.zeros((self.num_envs,), device=self.device)
+
+        # desired state
+        self.des_ee_pose = torch.zeros((self.num_envs, 7), device=self.device)
+        self.des_gripper_state = torch.full((self.num_envs,), 0.0, device=self.device)
+
+        # approach above object offset
+        self.offset = torch.zeros((self.num_envs, 7), device=self.device)
+        self.offset[:, 2] = 0.1
+        self.offset[:, -1] = 1.0  # warp expects quaternion as (x, y, z, w)
+
+        # convert to warp
+        self.sm_dt_wp = wp.from_torch(self.sm_dt, wp.float32)
+        self.sm_state_wp = wp.from_torch(self.sm_state, wp.int32)
+        self.sm_wait_time_wp = wp.from_torch(self.sm_wait_time, wp.float32)
+        self.des_ee_pose_wp = wp.from_torch(self.des_ee_pose, wp.transform)
+        self.des_gripper_state_wp = wp.from_torch(self.des_gripper_state, wp.float32)
+        self.offset_wp = wp.from_torch(self.offset, wp.transform)
+
+    def reset_idx(self, env_ids: Sequence[int] = None):
+        """Reset the state machine."""
+        if env_ids is None:
+            env_ids = slice(None)
+        self.sm_state[env_ids] = 0
+        self.sm_wait_time[env_ids] = 0.0
+
+    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor) -> torch.Tensor:
+        """Compute the desired state of the robot's end-effector and the gripper."""
+        # convert all transformations from (w, x, y, z) to (x, y, z, w)
+        ee_pose = ee_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        object_pose = object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        des_object_pose = des_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+
+        # convert to warp
+        ee_pose_wp = wp.from_torch(ee_pose.contiguous(), wp.transform)
+        object_pose_wp = wp.from_torch(object_pose.contiguous(), wp.transform)
+        des_object_pose_wp = wp.from_torch(des_object_pose.contiguous(), wp.transform)
+
+        # run state machine
+        wp.launch(
+            kernel=infer_state_machine,
+            dim=self.num_envs,
+            inputs=[
+                self.sm_dt_wp,
+                self.sm_state_wp,
+                self.sm_wait_time_wp,
+                ee_pose_wp,
+                object_pose_wp,
+                des_object_pose_wp,
+                self.des_ee_pose_wp,
+                self.des_gripper_state_wp,
+                self.offset_wp,
+                self.position_threshold,
+            ],
+            device=self.device,
+        )
+
+        # convert transformations back to (w, x, y, z)
+        des_ee_pose = self.des_ee_pose[:, [0, 1, 2, 6, 3, 4, 5]]
+        # convert to torch
+        return torch.cat([des_ee_pose, self.des_gripper_state.unsqueeze(-1)], dim=-1)
+
+def define_scene(env_cfg: LiftEnvCfg) -> LiftEnvCfg:
+    env_cfg.scene.plane = AssetBaseCfg(
+        prim_path="/World/defaultGroundPlane",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+    )
+
+    env_cfg.scene.table = AssetBaseCfg(
+        prim_path="/World/Table",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+    )
+    env_cfg.scene.light = AssetBaseCfg(
+        prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
+    )
+    # TODO understand how to set the object different from this cube
+    env_cfg.scene.object = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Object",
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+        spawn=UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            scale=(0.8, 0.8, 0.8),
+            rigid_props=RigidBodyPropertiesCfg(
+                solver_position_iteration_count=16,
+                solver_velocity_iteration_count=1,
+                max_angular_velocity=1000.0,
+                max_linear_velocity=1000.0,
+                max_depenetration_velocity=5.0,
+                disable_gravity=False,
+            ),
+        ),
+    )
+
+    env_cfg.scene.camera = CameraCfg(
+        prim_path="/World/CameraSensor",
+        update_period=0,
+        height=1080,
+        width=1920,
+        data_types=[
+            "rgb",
+        ],
+        colorize_semantic_segmentation=True,
+        colorize_instance_id_segmentation=True,
+        colorize_instance_segmentation=True,
+        spawn=sim_utils.PinholeCameraCfg(
+            #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+            focal_length=24.0,         # Wider view
+            focus_distance=400.0,     # Farther focus (everything is sharp)
+            horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+        ),
+    )
+
+    return env_cfg
+
+def assign_material(object_path, material_path):
+    stage = omni.usd.get_context().get_stage()
+
+    # Prendi la primitiva della tabella
+    object_prim = stage.GetPrimAtPath(object_path)
+    
+    # Prendi il materiale esistente
+    material_prim = stage.GetPrimAtPath(material_path)
+
+    if object_prim and material_prim:
+        material = UsdShade.Material(material_prim)
+        UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+        print("Materiale assegnato correttamente a ", object_path)
+    else:
+        print("Errore: Primitiva o materiale non trovati.")
+
+def take_image(camera_index, camera, rep_writer):
+    if args_cli.save:
+        # Save images from camera at camera_index
+        # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
+        single_cam_data = convert_dict_to_backend(
+            {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
+        )
+
+        # Extract the other information
+        single_cam_info = camera.data.info[camera_index]
+
+        # Pack data back into replicator format to save them using its writer
+        rep_output = {"annotators": {}}
+        for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
+            if info is not None:
+                rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
+            else:
+                rep_output["annotators"][key] = {"render_product": {"data": data}}
+        # Save images
+        # Note: We need to provide On-time data for Replicator to save the images.
+        rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
+        rep_writer.write(rep_output)
+
+        # Extract the image data (assuming 'rgb' is the key)
+        image_data = single_cam_data.get('rgb')
+        
+        if image_data is not None:
+            image_data = image_data.astype(np.uint8)
+            pil_image = Image.fromarray(image_data)
+            image_array = np.array(pil_image)
+            return image_array
+
+    return None 
+
+def run_simulator(env, env_cfg, args_cli):
+    camera = env.unwrapped.scene["camera"]
+
+    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")
+    rep_writer = rep.BasicWriter(
+        output_dir=output_dir,
+        frame_padding=0,
+        colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+        colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+        colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+    )
+
+    camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=env.unwrapped.device)
+    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
+    camera.set_world_poses_from_view(camera_positions, camera_targets)
+    camera_index = args_cli.camera_id
+
+
+
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
+    actions[:, 3] = 1.0
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((env.unwrapped.num_envs, 4), device=env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
+    # create state machine
+    pick_sm = PickAndLiftSm(
+        env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.num_envs, env.unwrapped.device, position_threshold=0.01
+    )
+
+    assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
+
+    count = 0
+
+    while simulation_app.is_running():
+
+        if count % 50 == 0:
+            image_array = take_image(camera_index, camera, rep_writer)
+        # run everything in inference mode
+        with torch.inference_mode():
+            # step environment
+            dones = env.step(actions)[-2]
+
+            # observations
+            # -- end-effector frame
+            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+            # -- object frame
+            object_data: RigidObjectData = env.unwrapped.scene["object"].data
+            object_position = object_data.root_pos_w - env.unwrapped.scene.env_origins
+            # -- target object frame
+            desired_position = env.unwrapped.command_manager.get_command("object_pose")[..., :3]
+
+            # advance state machine
+            actions = pick_sm.compute(
+                torch.cat([tcp_rest_position, tcp_rest_orientation], dim=-1),
+                torch.cat([object_position, desired_orientation], dim=-1),
+                torch.cat([desired_position, desired_orientation], dim=-1),
+            )
+
+            camera.update(dt=env.unwrapped.sim.get_physics_dt())
+
+            # reset state machine
+            if dones.any():
+                pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
+
+            count += 1
+
+    # close the environment
+    env.close()
+
+def clear_img_folder():
+    if os.path.exists("./isaac_ws/src/output/camera"):
+        for file in os.listdir("./isaac_ws/src/output/camera"):
+            if file.startswith("rgb") and file.endswith(".png"):
+                os.remove(os.path.join("./isaac_ws/src/output/camera", file))
+
+
+def main():
+    # # parse configuration
+    clear_img_folder()
+
+    env_cfg: LiftEnvCfg = parse_env_cfg(
+        "Isaac-Lift-Cube-Franka-IK-Abs-v0",
+        device=args_cli.device,
+        num_envs=args_cli.num_envs,
+        use_fabric=not args_cli.disable_fabric,
+    )
+
+
+    env_cfg = define_scene(env_cfg)
+
+    # create environment
+    env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
+    # reset environment at start
+    env.unwrapped.sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
+
+
+    env.reset()
+
+    run_simulator(env, env_cfg, args_cli)
+    
+
+if __name__ == "__main__":
+    # run the main function
+    main()
+    # close sim app
+    simulation_app.close()

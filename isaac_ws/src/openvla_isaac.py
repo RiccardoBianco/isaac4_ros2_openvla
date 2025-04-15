@@ -45,7 +45,9 @@ import requests
 
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import AssetBaseCfg
+
+from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers
@@ -254,13 +256,30 @@ class TableTopSceneCfg(InteractiveSceneCfg):
 
     )
 
-    cube = AssetBaseCfg(
-        prim_path="/World/Cube",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.05, 0.1, 0.05)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
-    )
+    # cube = AssetBaseCfg(
+    #     prim_path="/World/Cube",
+    #     spawn=sim_utils.UsdFileCfg(
+    #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.05, 0.1, 0.05)
+    #     ),
+    #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
+    # )
+
+    object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                scale=(0.8, 0.8, 0.8),
+                rigid_props=RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
     
     # sugar_box = AssetBaseCfg(
     #     prim_path="/World/SugarBox",
