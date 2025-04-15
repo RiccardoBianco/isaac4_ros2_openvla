@@ -1,7 +1,13 @@
 """
     # Usage
-    ~/isaac_ws/isaac_lab/isaaclab.sh -p ~/isaac_ws/src/isaac_data_collection.py  --enable_cameras --save
+    connect to the computer in the lab through ssh
 
+    # Move to the right directory and activate the conda environment
+    cd ~/Desktop/PLRItalians/isaac4_ros2_openvla
+    conda activate env_isaaclab
+
+    # run the script
+    ~/IsaacLab/isaaclab.sh -p isaac_ws/src/isaac_data_collection.py --enable_cameras --save --headless
 """
 
 # Scipy -> quaternion -> scalar last order [x, y, z, w]
