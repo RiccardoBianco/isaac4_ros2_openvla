@@ -1,8 +1,4 @@
-# TODO Disabilitare markers
 # TODO cambiare oggetto
-# TODO ogni volta che resetta la task salvo in una nuova cartella le immagini con numero di task progressivo
-# TODO eventualmente cambiare posizione della camera quando c'è il reset della scena
-
 """
 Script to run an environment with a pick and lift state machine.
 
@@ -50,6 +46,8 @@ from PIL import Image
 import warp as wp
 import numpy as np
 import os
+import shutil
+
 
 from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
 
@@ -84,10 +82,104 @@ from isaaclab.sensors.camera import CameraCfg
 from isaaclab.utils import convert_dict_to_backend
 
 
-from pxr import UsdShade
 
+from pxr import UsdGeom, Usd, UsdShade
 # initialize warp
 wp.init()
+
+
+from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
+from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
+from isaaclab.sim.spawners import UsdFileCfg
+from isaaclab.utils import configclass
+
+from isaaclab_tasks.manager_based.manipulation.lift.config.franka import joint_pos_env_cfg
+
+##
+# Pre-defined configs
+##
+from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
+
+
+##
+# Rigid object lift environment.
+##
+
+
+@configclass
+class FrankaCubeLiftEnvCfg(joint_pos_env_cfg.FrankaCubeLiftEnvCfg):
+    def __post_init__(self):
+        # post init of parent
+        super().__post_init__()
+
+        # Set Franka as robot
+        # We switch here to a stiffer PD controller for IK tracking to be better.
+        self.scene.robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        # Set actions for the specific robot type (franka)
+        self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+            asset_name="robot",
+            joint_names=["panda_joint.*"],
+            body_name="panda_hand",
+            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
+            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+        )
+
+        self.scene.plane = AssetBaseCfg(
+            prim_path="/World/defaultGroundPlane",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+        )
+
+        self.scene.table = AssetBaseCfg(
+            prim_path="/World/Table",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+        )
+        self.scene.light = AssetBaseCfg(
+            prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
+        )
+        # TODO understand how to set the object different from this cube
+        self.scene.object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                scale=(0.8, 0.8, 0.8),
+                rigid_props=RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
+
+        self.scene.camera = CameraCfg(
+            prim_path="/World/CameraSensor",
+            update_period=0,
+            height=1080,
+            width=1920,
+            data_types=[
+                "rgb",
+            ],
+            colorize_semantic_segmentation=True,
+            colorize_instance_id_segmentation=True,
+            colorize_instance_segmentation=True,
+            spawn=sim_utils.PinholeCameraCfg(
+                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                focal_length=24.0,         # Wider view
+                focus_distance=400.0,     # Farther focus (everything is sharp)
+                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+            ),
+        )
+
 
 class GripperState:
     """States for the gripper."""
@@ -290,64 +382,6 @@ class PickAndLiftSm:
         # convert to torch
         return torch.cat([des_ee_pose, self.des_gripper_state.unsqueeze(-1)], dim=-1)
 
-def define_scene(env_cfg: LiftEnvCfg) -> LiftEnvCfg:
-    env_cfg.scene.plane = AssetBaseCfg(
-        prim_path="/World/defaultGroundPlane",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
-    )
-
-    env_cfg.scene.table = AssetBaseCfg(
-        prim_path="/World/Table",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
-    )
-    env_cfg.scene.light = AssetBaseCfg(
-        prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
-    )
-    # TODO understand how to set the object different from this cube
-    env_cfg.scene.object = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Object",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
-        spawn=UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-            scale=(0.8, 0.8, 0.8),
-            rigid_props=RigidBodyPropertiesCfg(
-                solver_position_iteration_count=16,
-                solver_velocity_iteration_count=1,
-                max_angular_velocity=1000.0,
-                max_linear_velocity=1000.0,
-                max_depenetration_velocity=5.0,
-                disable_gravity=False,
-            ),
-        ),
-    )
-
-    env_cfg.scene.camera = CameraCfg(
-        prim_path="/World/CameraSensor",
-        update_period=0,
-        height=1080,
-        width=1920,
-        data_types=[
-            "rgb",
-        ],
-        colorize_semantic_segmentation=True,
-        colorize_instance_id_segmentation=True,
-        colorize_instance_segmentation=True,
-        spawn=sim_utils.PinholeCameraCfg(
-            #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-            focal_length=24.0,         # Wider view
-            focus_distance=400.0,     # Farther focus (everything is sharp)
-            horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
-        ),
-    )
-
-    return env_cfg
-
 def assign_material(object_path, material_path):
     stage = omni.usd.get_context().get_stage()
 
@@ -401,9 +435,10 @@ def take_image(camera_index, camera, rep_writer):
 def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
 
-    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")
+    print("\n\nRUNNING SIMULATOR!\n\n")
+
     rep_writer = rep.BasicWriter(
-        output_dir=output_dir,
+        output_dir=get_next_simulation_folder(),
         frame_padding=0,
         colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
         colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
@@ -463,6 +498,29 @@ def run_simulator(env, env_cfg, args_cli):
 
             # reset state machine
             if dones.any():
+                count = 0
+                rep_writer = rep.BasicWriter(
+                    output_dir=get_next_simulation_folder(),
+                    frame_padding=0,
+                    colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+                    colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+                    colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+                )
+                
+                # Base position
+                base_camera_position = torch.tensor([1.2, -0.2, 0.8], device=env.unwrapped.device)
+
+                # Random offset in [-0.3, 0.3]
+                random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
+
+                # Final camera position
+                camera_positions = base_camera_position + random_offset
+                camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+                camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
+                camera.set_world_poses_from_view(camera_positions, camera_targets)
+
+
+                
                 pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
 
             count += 1
@@ -472,32 +530,62 @@ def run_simulator(env, env_cfg, args_cli):
 
 def clear_img_folder():
     if os.path.exists("./isaac_ws/src/output/camera"):
-        for file in os.listdir("./isaac_ws/src/output/camera"):
-            if file.startswith("rgb") and file.endswith(".png"):
-                os.remove(os.path.join("./isaac_ws/src/output/camera", file))
+        shutil.rmtree("./isaac_ws/src/output/camera")
+    os.mkdir("./isaac_ws/src/output/camera")
+
+
+def get_next_simulation_folder(base_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")):
+    i = 0
+    while os.path.exists(os.path.join(base_path, f"simulation_{i}")):
+        i += 1
+    # Create the new directory
+    os.makedirs(os.path.join(base_path, f"simulation_{i}"))
+    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera", f"simulation_{i}")
+    return output_dir
+
+def remove_prim(prim_path):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+    if prim.IsValid():
+        stage.RemovePrim(prim_path)
+        print(f"✅ Removed prim at path: {prim_path}")
+    else:
+        print(f"⚠️  No prim found at path: {prim_path}")
+
+def hide_prim(prim_path: str):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+
+    if prim and prim.IsValid():
+        UsdGeom.Imageable(prim).MakeInvisible()
+        print(f"✅ Hidden prim: {prim_path}")
+    else:
+        print(f"⚠️ Prim '{prim_path}' not found or invalid.")
 
 
 def main():
     # # parse configuration
     clear_img_folder()
 
-    env_cfg: LiftEnvCfg = parse_env_cfg(
-        "Isaac-Lift-Cube-Franka-IK-Abs-v0",
-        device=args_cli.device,
-        num_envs=args_cli.num_envs,
-        use_fabric=not args_cli.disable_fabric,
-    )
+    env_cfg = FrankaCubeLiftEnvCfg()
+    env_cfg.sim.device = args_cli.device
+    env_cfg.scene.num_envs = args_cli.num_envs
+    env_cfg.sim.use_fabric = not args_cli.disable_fabric
 
-
-    env_cfg = define_scene(env_cfg)
-
+    env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
     # create environment
     env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
     # reset environment at start
     env.unwrapped.sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
 
+    # Rimuovi marker dopo che l'ambiente li ha creati automaticamente
 
     env.reset()
+
+    hide_prim("/Visuals/Command/goal_pose")
+    hide_prim("/Visuals/Command/body_pose")
+
+    
 
     run_simulator(env, env_cfg, args_cli)
     
