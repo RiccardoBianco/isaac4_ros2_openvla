@@ -1,4 +1,4 @@
-# TODO cambiare oggetto
+# TODO cambiare oggetto -> deve essere un rigid body altrimenti non funziona
 """
 Script to run an environment with a pick and lift state machine.
 
@@ -12,6 +12,8 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 """
 
 """Launch Omniverse Toolkit first."""
+
+PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
 import argparse
 
@@ -51,10 +53,6 @@ import shutil
 
 from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
 
-import isaaclab_tasks  # noqa: F401
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
-from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
-
 
 from isaaclab.assets import RigidObjectCfg, AssetBaseCfg
 from isaaclab.sensors import FrameTransformerCfg
@@ -66,9 +64,8 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
 import isaaclab.sim as sim_utils
-from isaaclab.envs import ManagerBasedRLEnv
 import omni.replicator.core as rep
 
 ##
@@ -76,7 +73,6 @@ import omni.replicator.core as rep
 ##
 
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
-from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # isort: skip
 import omni.usd
 from isaaclab.sensors.camera import CameraCfg
 from isaaclab.utils import convert_dict_to_backend
@@ -91,9 +87,6 @@ wp.init()
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.sim.spawners import UsdFileCfg
-from isaaclab.utils import configclass
-
-from isaaclab_tasks.manager_based.manipulation.lift.config.franka import joint_pos_env_cfg
 
 ##
 # Pre-defined configs
@@ -101,13 +94,11 @@ from isaaclab_tasks.manager_based.manipulation.lift.config.franka import joint_p
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
 
 
-##
-# Rigid object lift environment.
-##
+
 
 
 @configclass
-class FrankaCubeLiftEnvCfg(joint_pos_env_cfg.FrankaCubeLiftEnvCfg):
+class FrankaCubeLiftEnvCfg(LiftEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -124,6 +115,17 @@ class FrankaCubeLiftEnvCfg(joint_pos_env_cfg.FrankaCubeLiftEnvCfg):
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
             body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
         )
+
+        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["panda_finger.*"],
+            open_command_expr={"panda_finger_.*": 0.04},
+            close_command_expr={"panda_finger_.*": 0.0},
+        )
+
+                # Set the body name for the end effector
+        self.commands.object_pose.body_name = "panda_hand"
+
 
         self.scene.plane = AssetBaseCfg(
             prim_path="/World/defaultGroundPlane",
@@ -160,6 +162,73 @@ class FrankaCubeLiftEnvCfg(joint_pos_env_cfg.FrankaCubeLiftEnvCfg):
                 ),
             ),
         )
+
+        # self.scene.box = AssetBaseCfg(
+        #     prim_path="/World/CrakerBox",
+        #     spawn=sim_utils.UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", scale=(1.0, 1.0, 1.0)
+        #     ),
+        #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
+    
+        # self.scene.box = RigidObjectCfg(
+        #     prim_path="/World/Box",
+        #     spawn=UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", # TODO check if rigid body props are needed
+        #         scale=(1.0, 1.0, 0.2),
+        #         rigid_props=RigidBodyPropertiesCfg(),  # default va bene per ora
+        #     ),
+        #     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
+
+        # self.scene.box = AssetBaseCfg(
+        #     prim_path="/World/Box",
+        #     spawn=sim_utils.UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.1, 0.1, 0.01)
+        #     ),
+        #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
+        if PICK_AND_PLACE:
+            self.scene.box = RigidObjectCfg(
+                prim_path="/World/Box",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(0.5, 0.4, 0.0),  # Posizione iniziale
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
+
+
+
+
+                # Listens to the required transforms
+        marker_cfg = FRAME_MARKER_CFG.copy()
+        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_cfg.prim_path = "/Visuals/FrameTransformer"
+        self.scene.ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
+            debug_vis=False,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
+                    name="end_effector",
+                    offset=OffsetCfg(
+                        pos=[0.0, 0.0, 0.1034],
+                    ),
+                ),
+            ],
+        )
+
 
         self.scene.camera = CameraCfg(
             prim_path="/World/CameraSensor",
@@ -198,6 +267,12 @@ class PickSmState:
     LIFT_OBJECT = wp.constant(4)
 
 
+    PLACE_ON_GOAL = wp.constant(5)
+    PLACE_BELOW_GOAL = wp.constant(6)
+    RELEASE_OBJECT = wp.constant(7)
+    RETURN_HOME = wp.constant(8)
+
+
 class PickSmWaitTime:
     """Additional wait times (in s) for states for before switching."""
 
@@ -205,7 +280,12 @@ class PickSmWaitTime:
     APPROACH_ABOVE_OBJECT = wp.constant(0.5)
     APPROACH_OBJECT = wp.constant(0.6)
     GRASP_OBJECT = wp.constant(0.3)
-    LIFT_OBJECT = wp.constant(1.0)
+    LIFT_OBJECT = wp.constant(0.5)
+
+    PLACE_ON_GOAL = wp.constant(0.4)
+    PLACE_BELOW_GOAL = wp.constant(0.4)
+    RELEASE_OBJECT = wp.constant(0.4)
+    RETURN_HOME = wp.constant(0.5)
 
 
 @wp.func
@@ -221,6 +301,8 @@ def infer_state_machine(
     ee_pose: wp.array(dtype=wp.transform),
     object_pose: wp.array(dtype=wp.transform),
     des_object_pose: wp.array(dtype=wp.transform),
+    above_object_pose: wp.array(dtype=wp.transform),
+    below_goal_pose: wp.array(dtype=wp.transform),
     des_ee_pose: wp.array(dtype=wp.transform),
     gripper_state: wp.array(dtype=float),
     offset: wp.array(dtype=wp.transform),
@@ -270,9 +352,22 @@ def infer_state_machine(
         # wait for a while
         if sm_wait_time[tid] >= PickSmWaitTime.GRASP_OBJECT:
             # move to next state and reset wait time
-            sm_state[tid] = PickSmState.LIFT_OBJECT
+            sm_state[tid] = PickSmState.PLACE_ON_GOAL # TODO: LIFT_OBJECT if we want to lift first
             sm_wait_time[tid] = 0.0
-    elif state == PickSmState.LIFT_OBJECT:
+    # elif state == PickSmState.LIFT_OBJECT:
+    #     des_ee_pose[tid] = above_object_pose[tid]
+    #     gripper_state[tid] = GripperState.CLOSE
+    #     if distance_below_threshold(
+    #         wp.transform_get_translation(ee_pose[tid]),
+    #         wp.transform_get_translation(des_ee_pose[tid]),
+    #         position_threshold,
+    #     ):
+    #         # wait for a while
+    #         if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT:
+    #             # move to next state and reset wait time
+    #             sm_state[tid] = PickSmState.PLACE_ABOVE_GOAL
+    #             sm_wait_time[tid] = 0.0
+    elif state == PickSmState.PLACE_ON_GOAL:
         des_ee_pose[tid] = des_object_pose[tid]
         gripper_state[tid] = GripperState.CLOSE
         if distance_below_threshold(
@@ -281,10 +376,51 @@ def infer_state_machine(
             position_threshold,
         ):
             # wait for a while
-            if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT:
+            if sm_wait_time[tid] >= PickSmWaitTime.PLACE_ON_GOAL:
                 # move to next state and reset wait time
-                sm_state[tid] = PickSmState.LIFT_OBJECT
+                if PICK_AND_PLACE:
+                    sm_state[tid] = PickSmState.PLACE_BELOW_GOAL
+                else:
+                    sm_state[tid] = PickSmState.PLACE_ON_GOAL
                 sm_wait_time[tid] = 0.0
+                
+    elif state == PickSmState.PLACE_BELOW_GOAL and PICK_AND_PLACE:
+        des_ee_pose[tid] = below_goal_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.PLACE_BELOW_GOAL:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.RELEASE_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.RELEASE_OBJECT and PICK_AND_PLACE:
+        des_ee_pose[tid] = below_goal_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.RELEASE_OBJECT:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.RETURN_HOME
+            sm_wait_time[tid] = 0.0
+    elif state == PickSmState.RETURN_HOME and PICK_AND_PLACE:
+        des_ee_pose[tid] = des_object_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.RETURN_HOME:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.RETURN_HOME
+                sm_wait_time[tid] = 0.0
+
+
+
     # increment wait time
     sm_wait_time[tid] = sm_wait_time[tid] + dt[tid]
 
@@ -346,17 +482,21 @@ class PickAndLiftSm:
         self.sm_state[env_ids] = 0
         self.sm_wait_time[env_ids] = 0.0
 
-    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor) -> torch.Tensor:
+    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor, above_object_pose: torch.Tensor, below_goal_pose: torch.Tensor) -> torch.Tensor:
         """Compute the desired state of the robot's end-effector and the gripper."""
         # convert all transformations from (w, x, y, z) to (x, y, z, w)
         ee_pose = ee_pose[:, [0, 1, 2, 4, 5, 6, 3]]
         object_pose = object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
         des_object_pose = des_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        above_object_pose = above_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        below_goal_pose = below_goal_pose[:, [0, 1, 2, 4, 5, 6, 3]]
 
         # convert to warp
         ee_pose_wp = wp.from_torch(ee_pose.contiguous(), wp.transform)
         object_pose_wp = wp.from_torch(object_pose.contiguous(), wp.transform)
         des_object_pose_wp = wp.from_torch(des_object_pose.contiguous(), wp.transform)
+        above_object_pose_wp = wp.from_torch(above_object_pose.contiguous(), wp.transform)
+        below_goal_pose_wp = wp.from_torch(below_goal_pose.contiguous(), wp.transform)
 
         # run state machine
         wp.launch(
@@ -369,10 +509,13 @@ class PickAndLiftSm:
                 ee_pose_wp,
                 object_pose_wp,
                 des_object_pose_wp,
+                above_object_pose_wp,
+                below_goal_pose_wp,
                 self.des_ee_pose_wp,
                 self.des_gripper_state_wp,
                 self.offset_wp,
                 self.position_threshold,
+
             ],
             device=self.device,
         )
@@ -458,6 +601,7 @@ def run_simulator(env, env_cfg, args_cli):
     # desired object orientation (we only do position control of object)
     desired_orientation = torch.zeros((env.unwrapped.num_envs, 4), device=env.unwrapped.device)
     desired_orientation[:, 1] = 1.0
+
     # create state machine
     pick_sm = PickAndLiftSm(
         env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.num_envs, env.unwrapped.device, position_threshold=0.01
@@ -466,6 +610,7 @@ def run_simulator(env, env_cfg, args_cli):
     assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
 
     count = 0
+    restarted = True
 
     while simulation_app.is_running():
 
@@ -487,11 +632,24 @@ def run_simulator(env, env_cfg, args_cli):
             # -- target object frame
             desired_position = env.unwrapped.command_manager.get_command("object_pose")[..., :3]
 
+            if restarted == True:
+                above_object_position = object_position.clone()
+                above_object_position[:, 2] += 0.1  # 10 cm sopra oggetto
+
+                below_goal_position = desired_position.clone()
+                below_goal_position[:, 2] -= 0.18  # 10 cm sopra goal (dato che goal è già a +20 cm)
+                restarted = False
+
+
+
+
             # advance state machine
             actions = pick_sm.compute(
                 torch.cat([tcp_rest_position, tcp_rest_orientation], dim=-1),
                 torch.cat([object_position, desired_orientation], dim=-1),
                 torch.cat([desired_position, desired_orientation], dim=-1),
+                torch.cat([above_object_position, desired_orientation], dim=-1),
+                torch.cat([below_goal_position, desired_orientation], dim=-1),
             )
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
@@ -520,7 +678,23 @@ def run_simulator(env, env_cfg, args_cli):
                 camera.set_world_poses_from_view(camera_positions, camera_targets)
 
 
-                
+                goal_pose = env.unwrapped.command_manager.get_command("object_pose")
+
+                # Calcola posizione della box
+                if PICK_AND_PLACE:
+                    new_pos = goal_pose[..., :3].clone()
+                    new_pos[..., 2] = 0.0
+
+                    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
+
+                    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
+                    root_state[:, 0:3] = new_pos
+                    root_state[:, 3:7] = new_rot
+
+                    # Scrive la nuova pose alla simulazione
+                    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
+
+                restarted = True
                 pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
 
             count += 1
