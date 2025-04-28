@@ -64,6 +64,24 @@ from isaaclab.utils import convert_dict_to_backend
 import omni.replicator.core as rep
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import CameraCfg
+import time
+import sys
+import signal
+import json
+
+SAVE_DATASET_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "plr_openvla_dataset")
+
+def save_step_npz(image_array, joint_angles, ee_pose, camera_pose, instruction, step_id):
+    os.makedirs(SAVE_DATASET_DIR, exist_ok=True)
+    save_dict = {
+        "observation/image_primary": image_array.astype(np.uint8),
+        "observation/proprio": joint_angles.astype(np.float32),  # shape: (7,)
+        "observation/camera_pose": camera_pose.astype(np.float32),  # shape: (7,)
+        "action": ee_pose.astype(np.float32),  # shape: (7,)
+        "task/language_instruction": instruction,
+        "dataset_name": "plr_openvla_finetuning_dataset",
+    }
+    np.savez_compressed(os.path.join(SAVE_DATASET_DIR, f"step_{step_id:06d}.npz"), **save_dict)
 
 
 # Apply patch for handling numpy arrays in JSON
@@ -319,7 +337,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             # take image
             image_array = take_image(camera_index, camera, rep_writer)
-            # TODO CAMI - image_array -> image from camera
+            #  - image_array -> image from camera
              
 
             print(f"✅ Nuovo goal: {current_goal_idx}")
@@ -348,6 +366,21 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         )
         # TODO CAMI - ee_pose_b, ee_quat_b -> position and orientation of the end-effector in the base frame
         # TODO CAMI - joint_pos -> joint position of the robot
+        # Get joint angles, ee pose and camera pose
+        joint_angles_np = joint_pos.squeeze(0).cpu().numpy()
+        ee_pose_np = torch.cat([ee_pos_b, ee_quat_b], dim=1).squeeze(0).cpu().numpy()
+        camera_pose_np = torch.cat([camera.data.pose[camera_index]["position"], camera.data.pose[camera_index]["orientation"]], dim=0).cpu().numpy()
+
+        # Save to .npz format
+        save_step_npz(
+            image_array=image_array,
+            joint_angles=joint_angles_np,
+            ee_pose=ee_pose_np,
+            camera_pose=camera_pose_np,
+            instruction=OPENVLA_INSTRUCTION,
+            step_id=count
+        )
+
 
 
 
