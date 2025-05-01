@@ -72,14 +72,25 @@ import json
 SAVE_DATASET_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "plr_openvla_dataset")
 
 def save_step_npz(image_array, joint_angles, ee_pose, camera_pose, instruction, step_id):
+    """
+    Save a step of the simulation to a .npz file
+    # TODO NEED TO FINISH THE FUNCTION
+    """
     os.makedirs(SAVE_DATASET_DIR, exist_ok=True)
     save_dict = {
+        """
         "observation/image_primary": image_array.astype(np.uint8),
         "observation/proprio": joint_angles.astype(np.float32),  # shape: (7,)
         "observation/camera_pose": camera_pose.astype(np.float32),  # shape: (7,)
         "action": ee_pose.astype(np.float32),  # shape: (7,)
         "task/language_instruction": instruction,
         "dataset_name": "plr_openvla_finetuning_dataset",
+        """
+        "image": image_array.astype(np.uint8),
+        "wrist_image": image_array.astype(np.uint8), # TODO this has to be changes, take the respective Wrist Image and convert it
+        "state": joint_angles.astype(np.float32),  # shape: (9,) # TODO the state should also contain the Gripper State shape: (2,)
+        "action": ee_pose.astype(np.float32),  # shape: (9,) # TODO the action should also contain the Gripper Action shape: (2,)
+        "language_instruction": instruction,
     }
     np.savez_compressed(os.path.join(SAVE_DATASET_DIR, f"step_{step_id:06d}.npz"), **save_dict)
 

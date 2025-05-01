@@ -52,6 +52,15 @@ class ActionEncoding(IntEnum):
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
+    "simulation_dataset_custom": {
+        "image_obs_keys":   {"primary": "image_primary", "secondary": None,         "wrist": None},
+        "depth_obs_keys":   {"primary": None,             "secondary": None,         "wrist": None},
+        # whatever arrays you want to treat as “state” (flattened into a single vector)
+        "state_obs_keys":   ["proprio", "camera_pose"],
+        "state_encoding":   StateEncoding.POS_EULER,
+        # if your actions are end‐effector positions, use EEF_POS
+        "action_encoding":  ActionEncoding.EEF_POS,
+    },
     "fractal20220817_data": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
         "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
