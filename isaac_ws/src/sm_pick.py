@@ -15,6 +15,8 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
+OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
+
 import argparse
 
 from isaaclab.app import AppLauncher
@@ -640,6 +642,8 @@ def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
     wrist_camera = env.unwrapped.scene["wrist_camera"]
 
+    robot = env.unwrapped.scene["robot"]
+
     # Group the cameras
     cameras = [camera, wrist_camera]
 
@@ -681,6 +685,13 @@ def run_simulator(env, env_cfg, args_cli):
         if count % 50 == 0:
             image_array = take_image_new(camera_index, camera, rep_writer)
             wrist_image_array = take_image_new(camera_index, wrist_camera, rep_writer)
+
+            joint_pos = robot.data.default_joint_pos.clone()
+            joint_vel = robot.data.default_joint_vel.clone()
+
+            print("Joint Position: ", joint_pos)
+            print("Joint Velocity: ", joint_vel)
+
         # run everything in inference mode
         with torch.inference_mode():
             # step environment
