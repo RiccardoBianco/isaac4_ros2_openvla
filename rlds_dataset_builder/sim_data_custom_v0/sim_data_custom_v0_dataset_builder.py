@@ -45,10 +45,10 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         # ^ F: THIS IS THE STATE OF THE ROBOT ARM - MANDATORY
                         # ? Maybe need to change the shape
                         'state': tfds.features.Tensor(
-                            shape=(10,),
+                            shape=(9,),
                             dtype=np.float32,
                             doc='Robot state, consists of [7x robot joint angles, '
-                                '2x gripper position, 1x door opening angle].',
+                                '2x gripper position].',
                         )
                     }),
                     # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY

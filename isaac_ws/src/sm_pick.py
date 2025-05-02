@@ -249,6 +249,25 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             ),
         )
 
+        self.scene.wrist_camera = CameraCfg(
+            prim_path="/World/WristCameraSensor",
+            update_period=0,
+            height=1080,
+            width=1920,
+            data_types=[
+                "rgb",
+            ],
+            colorize_semantic_segmentation=True,
+            colorize_instance_id_segmentation=True,
+            colorize_instance_segmentation=True,
+            spawn=sim_utils.PinholeCameraCfg(
+                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                focal_length=24.0,         # Wider view
+                focus_distance=400.0,     # Farther focus (everything is sharp)
+                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+            ),
+        )
+
 
 class GripperState:
     """States for the gripper."""
@@ -542,6 +561,13 @@ def assign_material(object_path, material_path):
         print("Errore: Primitiva o materiale non trovati.")
 
 def take_image(camera_index, camera, rep_writer):
+    """
+    Take an image from the camera and save it using the replicator writer.
+    Args:
+        camera_index: Index of the camera to use.
+        camera: The camera object.
+        rep_writer: The replicator writer object.
+    """
     if args_cli.save:
         # Save images from camera at camera_index
         # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
@@ -575,8 +601,47 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
+def take_image_new(camera, rep_writer):
+    """
+    Capture and optionally save an image from a single camera.
+    Args:
+        camera: A single camera sensor object.
+        rep_writer: The Replicator writer.
+    Returns:
+        image_array: np.ndarray of the RGB image (or None).
+    """
+    # Convert camera outputs to numpy
+    if args_cli.save:
+        cam_data = convert_dict_to_backend(camera.data.output, backend="numpy")
+        cam_info = camera.data.info
+
+        rep_output = {"annotators": {}}
+        for key, data in cam_data.items():
+            info = cam_info.get(key, None)
+            if info is not None:
+                rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
+            else:
+                rep_output["annotators"][key] = {"render_product": {"data": data}}
+
+        # On-time trigger for the writer
+        rep_output["trigger_outputs"] = {"on_time": camera.frame}
+
+        rep_writer.write(rep_output)
+
+        # Return the RGB image if available
+        image_data = cam_data.get('rgb')
+        if image_data is not None:
+            image_data = image_data.astype(np.uint8)
+            return np.array(Image.fromarray(image_data))
+
+    return None
+
 def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
+    wrist_camera = env.unwrapped.scene["wrist_camera"]
+
+    # Group the cameras
+    cameras = [camera, wrist_camera]
 
     print("\n\nRUNNING SIMULATOR!\n\n")
 
@@ -592,7 +657,6 @@ def run_simulator(env, env_cfg, args_cli):
     camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     camera_index = args_cli.camera_id
-
 
 
     # create action buffers (position + quaternion)
@@ -615,7 +679,8 @@ def run_simulator(env, env_cfg, args_cli):
     while simulation_app.is_running():
 
         if count % 50 == 0:
-            image_array = take_image(camera_index, camera, rep_writer)
+            image_array = take_image_new(camera_index, camera, rep_writer)
+            wrist_image_array = take_image_new(camera_index, wrist_camera, rep_writer)
         # run everything in inference mode
         with torch.inference_mode():
             # step environment
