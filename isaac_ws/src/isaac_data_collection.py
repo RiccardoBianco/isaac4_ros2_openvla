@@ -377,20 +377,25 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         )
         # TODO CAMI - ee_pose_b, ee_quat_b -> position and orientation of the end-effector in the base frame
         # TODO CAMI - joint_pos -> joint position of the robot
-        # Get joint angles, ee pose and camera pose
-        joint_angles_np = joint_pos.squeeze(0).cpu().numpy()
-        ee_pose_np = torch.cat([ee_pos_b, ee_quat_b], dim=1).squeeze(0).cpu().numpy()
-        camera_pose_np = torch.cat([camera.data.pose[camera_index]["position"], camera.data.pose[camera_index]["orientation"]], dim=0).cpu().numpy()
+        # Joint + gripper state
+        gripper_state = robot.data.gripper_pos.squeeze(0).cpu().numpy()        # shape (2,)
+        state_full = np.concatenate([joint_pos.squeeze(0).cpu().numpy(), gripper_state])  # shape (9,)
 
-        # Save to .npz format
+        # EE pose + gripper target
+        ee_pose_np = torch.cat([ee_pos_b, ee_quat_b], dim=1).squeeze(0).cpu().numpy()
+        gripper_action = gripper_pos_des.squeeze(0).cpu().numpy()              # shape (2,)
+        action_full = np.concatenate([ee_pose_np, gripper_action])             # shape (9,)
+        
+        camera_pose_np = torch.cat([camera.data.pose[camera_index]["position"], camera.data.pose[camera_index]["orientation"]], dim=0).cpu().numpy()        
         save_step_npz(
             image_array=image_array,
-            joint_angles=joint_angles_np,
-            ee_pose=ee_pose_np,
+            joint_angles=state_full,
+            ee_pose=action_full,
             camera_pose=camera_pose_np,
             instruction=OPENVLA_INSTRUCTION,
             step_id=count
         )
+
 
 
 
