@@ -17,6 +17,14 @@ PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing 
 
 OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
 
+RANDOM_CAMERA = False
+
+SAVE_EVERY_ITERATIONS = 10
+SAVE = True
+
+CAMERA_HEIGHT = 256
+CAMERA_WIDTH = 256
+
 import argparse
 
 from isaaclab.app import AppLauncher
@@ -94,6 +102,26 @@ from isaaclab.sim.spawners import UsdFileCfg
 # Pre-defined configs
 ##
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
+
+SAVE_DATASET_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "plr_openvla_dataset")
+
+def save_step_npz(table_image_array, wrist_image_array, joint_angles, joint_velocities, instruction, step_id = 0, task_count=0):
+    """
+    Save a step of the simulation to a .npz file
+    # TODO NEED TO FINISH THE FUNCTION
+    """
+    folder_name = f"simulation_{task_count:03d}"
+    save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
+    os.makedirs(save_task_dir, exist_ok=True)
+    save_dict = {
+        "image": table_image_array.astype(np.uint8),
+        "wrist_image": wrist_image_array.astype(np.uint8), 
+        "state": joint_angles.cpu().numpy().astype(np.float32),  # shape: (9,)
+        "action": joint_velocities.cpu().numpy().astype(np.float32),  # shape: (9,)
+        "language_instruction": instruction,
+    }
+    np.savez_compressed(os.path.join(save_task_dir, f"step_{step_id:06d}.npz"), **save_dict)
+
 
 
 
@@ -235,8 +263,8 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         self.scene.camera = CameraCfg(
             prim_path="/World/CameraSensor",
             update_period=0,
-            height=1080,
-            width=1920,
+            height=CAMERA_HEIGHT,
+            width=CAMERA_WIDTH,
             data_types=[
                 "rgb",
             ],
@@ -252,10 +280,10 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
         self.scene.wrist_camera = CameraCfg(
-            prim_path="/World/WristCameraSensor",
+            prim_path="/World/envs/env_0/Robot/panda_hand/WristCameraSensor",
             update_period=0,
-            height=1080,
-            width=1920,
+            height=CAMERA_HEIGHT,
+            width=CAMERA_WIDTH,
             data_types=[
                 "rgb",
             ],
@@ -268,6 +296,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 focus_distance=400.0,     # Farther focus (everything is sharp)
                 horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
             ),
+             offset=CameraCfg.OffsetCfg(pos=(0.05, 0.0, 0.0), rot=(0.707, 0.0, 0.0, 0.707), convention="ros"),
         )
 
 
@@ -603,65 +632,27 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
-def take_image_new(camera, rep_writer):
-    """
-    Capture and optionally save an image from a single camera.
-    Args:
-        camera: A single camera sensor object.
-        rep_writer: The Replicator writer.
-    Returns:
-        image_array: np.ndarray of the RGB image (or None).
-    """
-    # Convert camera outputs to numpy
-    if args_cli.save:
-        cam_data = convert_dict_to_backend(camera.data.output, backend="numpy")
-        cam_info = camera.data.info
-
-        rep_output = {"annotators": {}}
-        for key, data in cam_data.items():
-            info = cam_info.get(key, None)
-            if info is not None:
-                rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
-            else:
-                rep_output["annotators"][key] = {"render_product": {"data": data}}
-
-        # On-time trigger for the writer
-        rep_output["trigger_outputs"] = {"on_time": camera.frame}
-
-        rep_writer.write(rep_output)
-
-        # Return the RGB image if available
-        image_data = cam_data.get('rgb')
-        if image_data is not None:
-            image_data = image_data.astype(np.uint8)
-            return np.array(Image.fromarray(image_data))
-
-    return None
-
 def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
     wrist_camera = env.unwrapped.scene["wrist_camera"]
 
     robot = env.unwrapped.scene["robot"]
 
-    # Group the cameras
-    cameras = [camera, wrist_camera]
-
     print("\n\nRUNNING SIMULATOR!\n\n")
 
     rep_writer = rep.BasicWriter(
-        output_dir=get_next_simulation_folder(),
+        output_dir=os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera"), # don't save the first sim
         frame_padding=0,
         colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
         colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
         colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
     )
 
+    # Set the camera position and target (wrist camera is already attached to the robot in the config)
     camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=env.unwrapped.device)
     camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     camera_index = args_cli.camera_id
-
 
     # create action buffers (position + quaternion)
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
@@ -678,19 +669,30 @@ def run_simulator(env, env_cfg, args_cli):
     assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
 
     count = 0
+    task_count = 0
     restarted = True
 
     while simulation_app.is_running():
 
-        if count % 50 == 0:
-            image_array = take_image_new(camera_index, camera, rep_writer)
-            wrist_image_array = take_image_new(camera_index, wrist_camera, rep_writer)
+        if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0:
+            table_image_array = take_image(camera_index, camera, rep_writer)
+            wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
 
-            joint_pos = robot.data.default_joint_pos.clone()
-            joint_vel = robot.data.default_joint_vel.clone()
+            joint_pos = robot.data.joint_pos.clone()
+            joint_vel = robot.data.joint_vel.clone()
 
             print("Joint Position: ", joint_pos)
             print("Joint Velocity: ", joint_vel)
+            if SAVE:
+                save_step_npz(
+                    table_image_array=table_image_array,
+                    wrist_image_array=wrist_image_array,
+                    joint_angles=joint_pos,
+                    joint_velocities=joint_vel,
+                    instruction=OPENVLA_INSTRUCTION,
+                    step_id=count,
+                    task_count=task_count
+                )
 
         # run everything in inference mode
         with torch.inference_mode():
@@ -740,18 +742,18 @@ def run_simulator(env, env_cfg, args_cli):
                     colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
                     colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
                 )
-                
-                # Base position
-                base_camera_position = torch.tensor([1.2, -0.2, 0.8], device=env.unwrapped.device)
+                if RANDOM_CAMERA:
+                    # Base position
+                    base_camera_position = torch.tensor([1.2, -0.2, 0.8], device=env.unwrapped.device)
+                    
+                    # Random offset in [-0.3, 0.3]
+                    random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
 
-                # Random offset in [-0.3, 0.3]
-                random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
-
-                # Final camera position
-                camera_positions = base_camera_position + random_offset
-                camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-                camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
-                camera.set_world_poses_from_view(camera_positions, camera_targets)
+                    # Final camera position
+                    camera_positions = base_camera_position + random_offset
+                    camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+                    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
+                    camera.set_world_poses_from_view(camera_positions, camera_targets)
 
 
                 goal_pose = env.unwrapped.command_manager.get_command("object_pose")
@@ -772,6 +774,8 @@ def run_simulator(env, env_cfg, args_cli):
 
                 restarted = True
                 pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
+                task_count += 1
+                continue
 
             count += 1
 
@@ -781,11 +785,16 @@ def run_simulator(env, env_cfg, args_cli):
 def clear_img_folder():
     if os.path.exists("./isaac_ws/src/output/camera"):
         shutil.rmtree("./isaac_ws/src/output/camera")
+    if os.path.exists("./isaac_ws/src/output/plr_openvla_dataset"):
+        shutil.rmtree("./isaac_ws/src/output/plr_openvla_dataset")
     os.mkdir("./isaac_ws/src/output/camera")
+    os.mkdir("./isaac_ws/src/output/plr_openvla_dataset")
+
+
 
 
 def get_next_simulation_folder(base_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")):
-    i = 0
+    i = 1
     while os.path.exists(os.path.join(base_path, f"simulation_{i}")):
         i += 1
     # Create the new directory

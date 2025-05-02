@@ -29,7 +29,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                     'observation': tfds.features.FeaturesDict({
                         # ^ F: THIS IS MAIN OBSERVATION - MANDATORY
                         'image': tfds.features.Image(
-                            shape=(64, 64, 3),
+                            shape=(256, 256, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Main camera RGB observation.',
@@ -37,7 +37,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         # ? F: DO WE NEED THIS? WE MIGHT ACTUALLY PROVIDE MORE INFORMATION AT TRAINING TIME
                         # ? AND THEN AT TEST TIME ONLY USE IMAGE + PROMPT
                         'wrist_image': tfds.features.Image(
-                            shape=(64, 64, 3),
+                            shape=(256, 256, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Wrist camera RGB observation.',
@@ -51,9 +51,9 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                                 '2x gripper position].',
                         )
                     }),
-                    # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY
+                    # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY (we are not using the last scalar)
                     'action': tfds.features.Tensor(
-                        shape=(10,),
+                        shape=(9,),
                         dtype=np.float32,
                         doc='Robot action, consists of [7x joint velocities, '
                             '2x gripper velocities, 1x terminate episode].',
