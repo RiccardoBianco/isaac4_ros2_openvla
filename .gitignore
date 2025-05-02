@@ -75,3 +75,4 @@ path_to_save_images/
 
 openvla/prova_imgs/
 .env
+rlds_dataset_builder/sim_data_custom_v0/data
