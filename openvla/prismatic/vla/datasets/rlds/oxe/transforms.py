@@ -843,18 +843,16 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 # TODO modify this transform to match the new dataset format
 def sim_data_custom_v0_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
-    gripper_action = trajectory["action"][:, -1:]
-    gripper_state = trajectory["state"][:, :7]
 
     trajectory["action"] = tf.concat(
         [
-            trajectory["action"][:, :7],
-            gripper_action,
+            trajectory["action"][:, :6],
+            tf.expand_dims(trajectory["action"][:, -1], -1),
         ],
         axis=1,
     )
-    trajectory["observation"]["EEF_state"] = trajectory["state"][:, :7]
-    trajectory["observation"]["gripper_state"] = gripper_state
+    trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
+    trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, 6]
     
     return trajectory
 
