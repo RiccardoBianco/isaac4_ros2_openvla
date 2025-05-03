@@ -77,7 +77,7 @@ from isaaclab_tasks.manager_based.manipulation.lift import mdp
 from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
-
+from isaaclab.utils.math import subtract_frame_transforms
 ##
 # Pre-defined configs
 ##
@@ -136,6 +136,30 @@ def scalar_last_to_first(q):
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+# def compute_delta(ee_pose, next_ee_pose, gripper_state):
+#     # Decomponi le pose
+#     pos1, quat1 = ee_pose[:3], ee_pose[3:]
+#     pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:]
+
+#     # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
+#     rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
+#     rot2 = Rotation.from_quat(scalar_first_to_last(quat2))
+
+#     # Calcola la traslazione nel world frame
+#     delta_pos_world = pos2 - pos1
+
+#     # Riporta la traslazione nel frame dell'EE
+#     delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+#     # Calcola rotazione relativa: R_delta = R1^-1 * R2
+#     delta_rot = rot1.inv() * rot2
+
+#     # Estrai rotazione relativa in Euler angles
+#     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
+
+#     # Combina in unico array
+#     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
+#     return delta
 def compute_delta(ee_pose, next_ee_pose, gripper_state):
     # Decomponi le pose
     pos1, quat1 = ee_pose[:3], ee_pose[3:]
@@ -157,9 +181,14 @@ def compute_delta(ee_pose, next_ee_pose, gripper_state):
     # Estrai rotazione relativa in Euler angles
     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
 
-    # Combina in unico array
+    # Combina il delta finale
     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
-    return delta
+
+    # Calcola lo stato attuale in forma x, y, z, roll, pitch, yaw, gripper
+    euler_rpy = rot1.as_euler('xyz')
+    state = np.concatenate([pos1, euler_rpy, gripper_state])  # shape (7,)
+
+    return delta, state
 
 
 
@@ -680,6 +709,14 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     """
     # folder_name = "episodes"
     # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
+    for i in range(len(episode_steps)-1):
+        episode_steps[i]["action"], episode_steps[i]["state"] = compute_delta(
+            episode_steps[i]["state"][:7], episode_steps[i+1]["state"][:7], episode_steps[i]["state"][-1]
+        )
+        print("Step: ", i)
+        print("Action: ", episode_steps[i]["action"])
+        print("State: ", episode_steps[i]["state"]) # x, y, z, 
+    
     os.makedirs(save_dir, exist_ok=True)
 
     # Get next available episode number
@@ -744,14 +781,24 @@ def run_simulator(env, env_cfg, args_cli):
             wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
 
             joint_pos = robot.data.joint_pos.clone()
-            joint_vel = robot.data.joint_vel.clone()
+            # joint_vel = robot.data.joint_vel.clone()
 
             # print("Joint Position: ", joint_pos)
             # print("Joint Velocity: ", joint_vel)
             if SAVE:
+                ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
+                root_pose_w = robot.data.root_state_w[:, 0:7]
+
+                # posizione dell'end-effector relativa al root
+                ee_pos_b, ee_quat_b = subtract_frame_transforms(
+                    root_pose_w[:, 0:3], root_pose_w[:, 3:7],
+                    ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
+                )
+                current_state = torch.cat([ee_pos_b, ee_quat_b, joint_pos[-2:]], dim=-1)  # shape: (9,)
+                
                 step_data = {
-                    "state": joint_pos.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
-                    "action": joint_vel.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
+                    "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
+                    # "action": joint_vel.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,) # TODO not nedeed
                     "image": table_image_array.astype(np.uint8),
                     "wrist_image": wrist_image_array.astype(np.uint8),
                     "language_instruction": OPENVLA_INSTRUCTION,
