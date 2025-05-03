@@ -160,10 +160,13 @@ from scipy.spatial.transform import Rotation
 #     # Combina in unico array
 #     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
 #     return delta
-def compute_delta(ee_pose, next_ee_pose, gripper_state):
+def compute_delta(ee_pose, next_ee_pose):
     # Decomponi le pose
-    pos1, quat1 = ee_pose[:3], ee_pose[3:]
-    pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:]
+    pos1, quat1 = ee_pose[:3], ee_pose[3:7]
+    pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:7]
+
+    gripper_state = ee_pose[7]
+    next_gripper = next_ee_pose[7]
 
     # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
     rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
@@ -181,8 +184,12 @@ def compute_delta(ee_pose, next_ee_pose, gripper_state):
     # Estrai rotazione relativa in Euler angles
     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
 
+    gripper_state = np.atleast_1d(gripper_state)
+    next_gripper = np.atleast_1d(next_gripper)
+
+
     # Combina il delta finale
-    delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper])  # shape (7,)
 
     # Calcola lo stato attuale in forma x, y, z, roll, pitch, yaw, gripper
     euler_rpy = rot1.as_euler('xyz')
@@ -711,11 +718,11 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
     for i in range(len(episode_steps)-1):
         episode_steps[i]["action"], episode_steps[i]["state"] = compute_delta(
-            episode_steps[i]["state"][:7], episode_steps[i+1]["state"][:7], episode_steps[i]["state"][-1]
+            episode_steps[i]["state"], episode_steps[i+1]["state"]
         )
         print("Step: ", i)
-        print("Action: ", episode_steps[i]["action"])
-        print("State: ", episode_steps[i]["state"]) # x, y, z, 
+        print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
+        print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
     
     os.makedirs(save_dir, exist_ok=True)
 
@@ -794,10 +801,15 @@ def run_simulator(env, env_cfg, args_cli):
                     root_pose_w[:, 0:3], root_pose_w[:, 3:7],
                     ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
                 )
-                current_state = torch.cat([ee_pos_b, ee_quat_b, joint_pos[-2:]], dim=-1)  # shape: (9,)
+                print("joint_pos: ", joint_pos)
+                print("joint_pose shape: ", joint_pos.shape)
+                gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
+                print("gripper_state: ", gripper_state.shape)
+                print("gripper_state: ", gripper_state)
+                current_state = torch.cat([ee_pos_b, ee_quat_b, gripper_state], dim=-1)  # shape: (1, 8)
                 
                 step_data = {
-                    "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
+                    "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (8,)
                     # "action": joint_vel.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,) # TODO not nedeed
                     "image": table_image_array.astype(np.uint8),
                     "wrist_image": wrist_image_array.astype(np.uint8),
