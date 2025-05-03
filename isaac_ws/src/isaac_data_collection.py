@@ -363,7 +363,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             
             current_goal_idx = (current_goal_idx + 1) % len(ee_goal_deltas)
             
-
+        print("Robot entity cfg: ", robot_entity_cfg.body_ids)
+        print("Robot entity cfg 0: ", robot_entity_cfg.body_ids[0])
+        
         # get current state
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]

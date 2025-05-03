@@ -124,6 +124,44 @@ def save_step_npz(table_image_array, wrist_image_array, joint_angles, joint_velo
 
 
 
+def scalar_first_to_last(q):
+    w, x, y, z = q
+    return [x, y, z, w]
+
+
+def scalar_last_to_first(q):
+    x, y, z, w = q
+    return [w, x, y, z]
+
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+def compute_delta(ee_pose, next_ee_pose, gripper_state):
+    # Decomponi le pose
+    pos1, quat1 = ee_pose[:3], ee_pose[3:]
+    pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:]
+
+    # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
+    rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
+    rot2 = Rotation.from_quat(scalar_first_to_last(quat2))
+
+    # Calcola la traslazione nel world frame
+    delta_pos_world = pos2 - pos1
+
+    # Riporta la traslazione nel frame dell'EE
+    delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+    # Calcola rotazione relativa: R_delta = R1^-1 * R2
+    delta_rot = rot1.inv() * rot2
+
+    # Estrai rotazione relativa in Euler angles
+    delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
+
+    # Combina in unico array
+    delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
+    return delta
+
+
 
 
 

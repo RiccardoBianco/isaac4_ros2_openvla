@@ -58,9 +58,9 @@ OXE_DATASET_CONFIGS = {
         "depth_obs_keys":   {"primary": None,             "secondary": None,         "wrist": None},
         # whatever arrays you want to treat as “state” (flattened into a single vector)
         "state_obs_keys":   ["state"],
-        "state_encoding":   StateEncoding.JOINT,
+        "state_encoding":   StateEncoding.POS_EULER,
         # if your actions are end‐effector positions, use EEF_POS
-        "action_encoding":  ActionEncoding.JOINT_POS,
+        "action_encoding":  ActionEncoding.EEF_POS,
     },
     "fractal20220817_data": {
         "image_obs_keys": {"primary": "image", "secondary": None, "wrist": None},
