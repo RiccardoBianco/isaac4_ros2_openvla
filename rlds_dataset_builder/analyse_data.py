@@ -1,0 +1,56 @@
+import os
+import numpy as np
+
+folder_path = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/rlds_dataset_builder/sim_data_custom_v0/data/train"
+npy_files = sorted([f for f in os.listdir(folder_path) if f.endswith(".npy")])
+
+printfirst = True
+
+for filename in npy_files:
+    file_path = os.path.join(folder_path, filename)
+    data = np.load(file_path, allow_pickle=True)
+
+    print(f"\n📂 File: {filename}")
+    print(f"  Shape: {data.shape}, Type: {type(data)}, Dtype: {data.dtype}")
+
+    if printfirst:
+        printfirst = False
+        # Print info about first element
+        first_step = data[0]
+        print(f"  Step 0 keys: {list(first_step.keys())}")
+
+        # If 'action' is a key, analyze across steps
+        # Analyze 'state'
+        if "state" in first_step:
+            states = np.array([step["state"] for step in data])
+            print(f"  State shape: {states.shape}")
+            print(f"  State: {states[0]}")
+
+        if "action" in first_step:
+            actions = np.array([step["action"] for step in data])
+            print(f"  Action shape: {actions.shape}")
+            print(f"  Action: {actions}")
+            # print(f"  Action mean: {np.mean(actions, axis=0)}")
+            # print(f"  Action std:  {np.std(actions, axis=0)}")
+        else:
+            print("  ⚠️ No 'action' key found in steps.")
+
+        # Show image shapes
+        if "image" in first_step:
+            img_shape = first_step["image"].shape
+            print(f"  Image shape (step 0): {img_shape}")
+
+        if "wrist_image" in first_step:
+            wrist_img_shape = first_step["wrist_image"].shape
+            print(f"  Wrist image shape (step 0): {wrist_img_shape}")
+        
+        if "language_instruction" in first_step:
+            language_instruction = first_step["language_instruction"]
+            print(f"  Language instruction (step 0): {language_instruction}")
+
+        random_data = data[9]
+        if "language_instruction" in random_data:
+            language_instruction = random_data["language_instruction"]
+            print(f"  Language instruction (step 9): {language_instruction}")
+            print(f"  Image shape (step 9): {img_shape}")
+            print(f"  Wrist image shape (step 9): {wrist_img_shape}")

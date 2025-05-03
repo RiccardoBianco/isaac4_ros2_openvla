@@ -841,8 +841,26 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     return trajectory
 
 
+# TODO modify this transform to match the new dataset format
+def sim_data_custom_v0_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    gripper_action = trajectory["action"][:, -1:]
+    gripper_state = trajectory["state"][:, :7]
+
+    trajectory["action"] = tf.concat(
+        [
+            trajectory["action"][:, :7],
+            gripper_action,
+        ],
+        axis=1,
+    )
+    trajectory["observation"]["EEF_state"] = trajectory["state"][:, :7]
+    trajectory["observation"]["gripper_state"] = gripper_state
+    
+    return trajectory
+
 # === Registry ===
 OXE_STANDARDIZATION_TRANSFORMS = {
+    "sim_data_custom_v0": sim_data_custom_v0_transform,
     "bridge_oxe": bridge_oxe_dataset_transform,
     "bridge_orig": bridge_orig_dataset_transform,
     "bridge_dataset": bridge_orig_dataset_transform,

@@ -19,6 +19,14 @@ Run with:
                                     ...
 """
 
+# ^ NOTE ADDED
+import sys
+from pathlib import Path
+prismatic_path = Path(__file__).parent.parent
+print(f"Adding {prismatic_path} to sys.path")
+sys.path.append(str(prismatic_path.resolve()))
+# ^ NOTE ADDED
+
 import os
 from collections import deque
 from dataclasses import dataclass

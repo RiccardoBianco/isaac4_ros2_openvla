@@ -151,6 +151,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
 
         # create list of all examples
         episode_paths = glob.glob(path)
+        print("I am here", episode_paths)
 
         # for smallish datasets, use single-thread parsing
         for sample in episode_paths:

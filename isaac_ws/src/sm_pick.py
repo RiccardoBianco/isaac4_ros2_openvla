@@ -632,6 +632,30 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
+def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"):
+    """
+    Save a list of timestep dictionaries into a progressively numbered .npy file.
+    
+    Args:
+        episode_steps (List[dict]): Each step must include keys like "state", "action", "image", etc.
+        save_dir (str): Directory where .npy episodes are stored.
+    """
+    # folder_name = "episodes"
+    # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Get next available episode number
+    existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
+    episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
+    next_num = max(episode_nums) + 1 if episode_nums else 0
+
+    filename = f"episode_{next_num:03d}.npy"
+    filepath = os.path.join(save_dir, filename)
+
+    # Save
+    np.save(filepath, episode_steps, allow_pickle=True)
+    print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
+
 def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
     wrist_camera = env.unwrapped.scene["wrist_camera"]
@@ -639,6 +663,9 @@ def run_simulator(env, env_cfg, args_cli):
     robot = env.unwrapped.scene["robot"]
 
     print("\n\nRUNNING SIMULATOR!\n\n")
+
+    # ^ Temporary data structure for saving ["state", "action", "image", "wrist_image", "language_instruction"] for each step
+    episode_data = []
 
     rep_writer = rep.BasicWriter(
         output_dir=os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera"), # don't save the first sim
@@ -681,18 +708,19 @@ def run_simulator(env, env_cfg, args_cli):
             joint_pos = robot.data.joint_pos.clone()
             joint_vel = robot.data.joint_vel.clone()
 
-            print("Joint Position: ", joint_pos)
-            print("Joint Velocity: ", joint_vel)
+            # print("Joint Position: ", joint_pos)
+            # print("Joint Velocity: ", joint_vel)
             if SAVE:
-                save_step_npz(
-                    table_image_array=table_image_array,
-                    wrist_image_array=wrist_image_array,
-                    joint_angles=joint_pos,
-                    joint_velocities=joint_vel,
-                    instruction=OPENVLA_INSTRUCTION,
-                    step_id=count,
-                    task_count=task_count
-                )
+                step_data = {
+                    "state": joint_pos.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
+                    "action": joint_vel.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,)
+                    "image": table_image_array.astype(np.uint8),
+                    "wrist_image": wrist_image_array.astype(np.uint8),
+                    "language_instruction": OPENVLA_INSTRUCTION,
+                }
+
+                # Add step to episode_data
+                episode_data.append(step_data)
 
         # run everything in inference mode
         with torch.inference_mode():
@@ -718,9 +746,6 @@ def run_simulator(env, env_cfg, args_cli):
                 below_goal_position[:, 2] -= 0.18  # 10 cm sopra goal (dato che goal è già a +20 cm)
                 restarted = False
 
-
-
-
             # advance state machine
             actions = pick_sm.compute(
                 torch.cat([tcp_rest_position, tcp_rest_orientation], dim=-1),
@@ -734,6 +759,11 @@ def run_simulator(env, env_cfg, args_cli):
 
             # reset state machine
             if dones.any():
+                # ^ Create the .npy file with the data of the current episode
+                if task_count != 0:
+                    save_episode_stepwise(episode_data)
+                    # ^ Reset the data structures
+                    episode_data = []
                 count = 0
                 rep_writer = rep.BasicWriter(
                     output_dir=get_next_simulation_folder(),
@@ -787,14 +817,17 @@ def clear_img_folder():
         shutil.rmtree("./isaac_ws/src/output/camera")
     if os.path.exists("./isaac_ws/src/output/plr_openvla_dataset"):
         shutil.rmtree("./isaac_ws/src/output/plr_openvla_dataset")
+    if os.path.exists("./isaac_ws/src/output/episodes"):
+        shutil.rmtree("./isaac_ws/src/output/episodes")
     os.mkdir("./isaac_ws/src/output/camera")
     os.mkdir("./isaac_ws/src/output/plr_openvla_dataset")
+    os.mkdir("./isaac_ws/src/output/episodes")
 
 
 
 
 def get_next_simulation_folder(base_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")):
-    i = 1
+    i = 0
     while os.path.exists(os.path.join(base_path, f"simulation_{i}")):
         i += 1
     # Create the new directory
