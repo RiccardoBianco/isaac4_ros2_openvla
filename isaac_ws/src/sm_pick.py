@@ -162,15 +162,15 @@ from scipy.spatial.transform import Rotation
 #     return delta
 def compute_delta(ee_pose, next_ee_pose):
     # Decomponi le pose
-    pos1, quat1 = ee_pose[:3], ee_pose[3:7]
-    pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:7]
+    # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
+    # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
 
-    gripper_state = ee_pose[7]
-    next_gripper = next_ee_pose[7]
+    pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+    pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
 
-    # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
-    rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
-    rot2 = Rotation.from_quat(scalar_first_to_last(quat2))
+    # Rotazioni come oggetti Rotation
+    rot1 = Rotation.from_euler('xyz', rpy1)
+    rot2 = Rotation.from_euler('xyz', rpy2)
 
     # Calcola la traslazione nel world frame
     delta_pos_world = pos2 - pos1
@@ -184,18 +184,13 @@ def compute_delta(ee_pose, next_ee_pose):
     # Estrai rotazione relativa in Euler angles
     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
 
-    gripper_state = np.atleast_1d(gripper_state)
-    next_gripper = np.atleast_1d(next_gripper)
+    next_gripper = np.atleast_1d(grip2)
 
 
     # Combina il delta finale
-    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper])  # shape (7,)
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
 
-    # Calcola lo stato attuale in forma x, y, z, roll, pitch, yaw, gripper
-    euler_rpy = rot1.as_euler('xyz')
-    state = np.concatenate([pos1, euler_rpy, gripper_state])  # shape (7,)
-
-    return delta, state
+    return delta
 
 
 
@@ -400,7 +395,7 @@ class PickSmState:
 class PickSmWaitTime:
     """Additional wait times (in s) for states for before switching."""
 
-    REST = wp.constant(0.2)
+    REST = wp.constant(1.5)
     APPROACH_ABOVE_OBJECT = wp.constant(0.5)
     APPROACH_OBJECT = wp.constant(0.6)
     GRASP_OBJECT = wp.constant(0.3)
@@ -706,6 +701,30 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
+def get_current_state(robot):
+    joint_pos = robot.data.joint_pos.clone()
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
+    root_pose_w = robot.data.root_state_w[:, 0:7]
+
+    # posizione dell'end-effector relativa al root
+    ee_pos_b, ee_quat_b = subtract_frame_transforms(
+        root_pose_w[:, 0:3], root_pose_w[:, 3:7],
+        ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
+    )
+    # print("joint_pos: ", joint_pos)
+    # print("joint_pose shape: ", joint_pos.shape)
+    gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
+    # print("gripper_state: ", gripper_state.shape)
+    # print("gripper_state: ", gripper_state)
+    quat_np = scalar_first_to_last(ee_quat_b[0].cpu().numpy())  # shape (4,)
+    R_xyz_np = Rotation.from_quat(quat_np).as_euler('xyz') # shape (3,)
+    R_xyz = torch.tensor(R_xyz_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
+    pad = torch.tensor([[0.0]], device=ee_pos_b.device)
+    current_state = torch.cat([ee_pos_b, R_xyz, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
+    #current_state = torch.cat([ee_pos_b, R_xyz, gripper_state], dim=-1) # shape: (1, 7)
+    return current_state
+                
+
 def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"):
     """
     Save a list of timestep dictionaries into a progressively numbered .npy file.
@@ -717,13 +736,13 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     # folder_name = "episodes"
     # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
     for i in range(len(episode_steps)-1):
-        episode_steps[i]["action"], episode_steps[i]["state"] = compute_delta(
-            episode_steps[i]["state"], episode_steps[i+1]["state"]
-        )
-        print("Step: ", i)
-        print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
-        print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
+        episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
+        # print("Step: ", i)
+        # print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
+        # print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
     
+    episode_steps[-1]["action"] = compute_delta(episode_steps[-1]["state"], episode_steps[-1]["state"])
+
     os.makedirs(save_dir, exist_ok=True)
 
     # Get next available episode number
@@ -783,34 +802,21 @@ def run_simulator(env, env_cfg, args_cli):
 
     while simulation_app.is_running():
 
-        if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0:
+
+        if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
             table_image_array = take_image(camera_index, camera, rep_writer)
             wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
 
-            joint_pos = robot.data.joint_pos.clone()
+            
             # joint_vel = robot.data.joint_vel.clone()
 
             # print("Joint Position: ", joint_pos)
             # print("Joint Velocity: ", joint_vel)
             if SAVE:
-                ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
-                root_pose_w = robot.data.root_state_w[:, 0:7]
-
-                # posizione dell'end-effector relativa al root
-                ee_pos_b, ee_quat_b = subtract_frame_transforms(
-                    root_pose_w[:, 0:3], root_pose_w[:, 3:7],
-                    ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
-                )
-                print("joint_pos: ", joint_pos)
-                print("joint_pose shape: ", joint_pos.shape)
-                gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
-                print("gripper_state: ", gripper_state.shape)
-                print("gripper_state: ", gripper_state)
-                current_state = torch.cat([ee_pos_b, ee_quat_b, gripper_state], dim=-1)  # shape: (1, 8)
+                current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
                 
                 step_data = {
                     "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (8,)
-                    # "action": joint_vel.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (9,) # TODO not nedeed
                     "image": table_image_array.astype(np.uint8),
                     "wrist_image": wrist_image_array.astype(np.uint8),
                     "language_instruction": OPENVLA_INSTRUCTION,
@@ -822,7 +828,7 @@ def run_simulator(env, env_cfg, args_cli):
         # run everything in inference mode
         with torch.inference_mode():
             # step environment
-            dones = env.step(actions)[-2]
+            
 
             # observations
             # -- end-effector frame
@@ -851,6 +857,8 @@ def run_simulator(env, env_cfg, args_cli):
                 torch.cat([above_object_position, desired_orientation], dim=-1),
                 torch.cat([below_goal_position, desired_orientation], dim=-1),
             )
+        
+            dones = env.step(actions)[-2]
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
 

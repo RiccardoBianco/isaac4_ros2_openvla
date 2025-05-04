@@ -5,8 +5,8 @@ torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
   --run_root_dir "/home/wanghan/tensorflow_datasets/sim_data_custom_v0/1.0.0/logs" \
   --adapter_tmp_dir "/home/wanghan/tensorflow_datasets/sim_data_custom_v0/1.0.0/adapter_tmp" \
   --lora_rank 32 \
-  --batch_size 8 \
-  --grad_accumulation_steps 1 \
+  --batch_size 2 \
+  --grad_accumulation_steps 8 \
   --learning_rate 5e-4 \
   --image_aug True \
   --wandb_project openvla \

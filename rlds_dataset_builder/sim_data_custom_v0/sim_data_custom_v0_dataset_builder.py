@@ -45,7 +45,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         # ^ F: THIS IS THE STATE OF THE ROBOT ARM - MANDATORY
                         # ? Maybe need to change the shape
                         'state': tfds.features.Tensor(
-                            shape=(9,),
+                            shape=(8,), # TODO penso sia 8 corretto perché ci va il padding -> vedi config
                             dtype=np.float32,
                             doc='Robot state, consists of [7x robot joint angles, '
                                 '2x gripper position].',
@@ -53,7 +53,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                     }),
                     # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY (we are not using the last scalar)
                     'action': tfds.features.Tensor(
-                        shape=(9,),
+                        shape=(7,),
                         dtype=np.float32,
                         doc='Robot action, consists of [7x joint velocities, '
                             '2x gripper velocities, 1x terminate episode].',

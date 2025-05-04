@@ -57,7 +57,7 @@ OXE_DATASET_CONFIGS = {
         "image_obs_keys":   {"primary": "image", "secondary": None,         "wrist": "wrist_image"},
         "depth_obs_keys":   {"primary": None,             "secondary": None,         "wrist": None},
         # whatever arrays you want to treat as “state” (flattened into a single vector)
-        "state_obs_keys":   ["state"],
+        "state_obs_keys":   ["EEF_state", None, "gripper_state"],
         "state_encoding":   StateEncoding.POS_EULER,
         # if your actions are end‐effector positions, use EEF_POS
         "action_encoding":  ActionEncoding.EEF_POS,

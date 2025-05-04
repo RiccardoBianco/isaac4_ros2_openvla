@@ -852,7 +852,7 @@ def sim_data_custom_v0_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
         axis=1,
     )
     trajectory["observation"]["EEF_state"] = trajectory["observation"]["state"][:, :6]
-    trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, 6]
+    trajectory["observation"]["gripper_state"] = trajectory["observation"]["state"][:, 7]
     
     return trajectory
 
