@@ -51,6 +51,7 @@ Desktop.ini
 *.dll
 *.exe
 *.err
+*.yml
 
 # Log e debug
 *.log
