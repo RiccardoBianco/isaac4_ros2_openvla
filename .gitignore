@@ -50,6 +50,7 @@ Desktop.ini
 *.so
 *.dll
 *.exe
+*.err
 
 # Log e debug
 *.log
@@ -76,3 +77,6 @@ path_to_save_images/
 openvla/prova_imgs/
 .env
 rlds_dataset_builder/sim_data_custom_v0/data
+
+# Euler
+run_gpu.sh

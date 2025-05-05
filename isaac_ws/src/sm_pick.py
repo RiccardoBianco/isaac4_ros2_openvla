@@ -15,7 +15,7 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
-OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
+OPENVLA_INSTRUCTION = "Pick the cube and place it on the red area. \n"
 
 RANDOM_CAMERA = False
 
