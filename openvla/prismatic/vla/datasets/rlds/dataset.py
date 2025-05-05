@@ -200,6 +200,7 @@ def make_dataset_from_rlds(
         return traj
 
     builder = tfds.builder(name, data_dir=data_dir)
+    print("Datadir:", data_dir)
 
     # load or compute dataset statistics
     if isinstance(dataset_statistics, str):
@@ -231,10 +232,18 @@ def make_dataset_from_rlds(
         dataset_statistics["action"]["mask"] = np.array(action_normalization_mask)
 
     # construct the dataset
+    print("Builder info splits:", builder.info.splits)
+
     if "val" not in builder.info.splits:
         split = "train[:95%]" if train else "train[95%:]"
     else:
         split = "train" if train else "val"
+
+    if split == "val":
+        print("Using validation split")
+        shuffle = False
+    else:
+        print("Using training split")
 
     dataset = dl.DLataset.from_rlds(builder, split=split, shuffle=shuffle, num_parallel_reads=num_parallel_reads)
 
@@ -247,6 +256,7 @@ def make_dataset_from_rlds(
         ),
         num_parallel_calls,
     )
+    print(f"Num examples in {split} split:", dataset.cardinality().numpy())
 
     return dataset, dataset_statistics
 
@@ -569,7 +579,8 @@ def make_interleaved_dataset(
 
     # Shuffle the Dataset
     #   =>> IMPORTANT :: Shuffle AFTER .cache(), or else memory will still leak!
-    dataset = dataset.shuffle(shuffle_buffer_size)
+    if train: # NOTE ric added this check to avoid shuffling val set
+        dataset = dataset.shuffle(shuffle_buffer_size)
 
     # Apply Frame Transforms
     overwatch.info("Applying frame transforms on dataset...")

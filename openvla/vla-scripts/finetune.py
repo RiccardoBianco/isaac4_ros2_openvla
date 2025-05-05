@@ -118,6 +118,54 @@ class FinetuneConfig:
     # fmt: on
 
 
+@torch.no_grad()
+def run_validation(model, dataloader, device, action_tokenizer):
+    model.eval()
+    val_losses, val_accuracies, val_l1_losses = [], [], []
+
+    for batch in list(dataloader):  # Limita a 10 batch per velocità
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            output: CausalLMOutputWithPast = model(
+                input_ids=batch["input_ids"].to(device),
+                attention_mask=batch["attention_mask"].to(device),
+                pixel_values=batch["pixel_values"].to(torch.bfloat16).to(device),
+                labels=batch["labels"],
+            )
+            loss = output.loss
+
+        # Accuracy & L1
+        action_logits = output.logits[:, model.module.vision_backbone.featurizer.patch_embed.num_patches : -1]
+        action_preds = action_logits.argmax(dim=2)
+        action_gt = batch["labels"][:, 1:].to(action_preds.device)
+        mask = action_gt > action_tokenizer.action_token_begin_idx
+
+        correct_preds = (action_preds == action_gt) & mask
+        accuracy = correct_preds.sum().float() / mask.sum().float()
+
+        cont_pred = torch.tensor(action_tokenizer.decode_token_ids_to_actions(action_preds[mask].cpu().numpy()))
+        cont_gt = torch.tensor(action_tokenizer.decode_token_ids_to_actions(action_gt[mask].cpu().numpy()))
+        l1_loss = torch.nn.functional.l1_loss(cont_pred, cont_gt)
+
+        val_losses.append(loss.item())
+        val_accuracies.append(accuracy.item())
+        val_l1_losses.append(l1_loss.item())
+
+    model.train()
+
+    if not val_losses:
+        print("VALIDATION SKIPPED: no batches returned by val_dataloader.")
+        return {
+            "val_loss": float("nan"),
+            "val_accuracy": float("nan"),
+            "val_l1_loss": float("nan"),
+        }
+    return {
+        "val_loss": sum(val_losses) / len(val_losses),
+        "val_accuracy": sum(val_accuracies) / len(val_accuracies),
+        "val_l1_loss": sum(val_l1_losses) / len(val_l1_losses),
+    }
+
+
 @draccus.wrap()
 def finetune(cfg: FinetuneConfig) -> None:
     print(f"Fine-tuning OpenVLA Model `{cfg.vla_path}` on `{cfg.dataset_name}`")
@@ -220,30 +268,63 @@ def finetune(cfg: FinetuneConfig) -> None:
         image_transform=processor.image_processor.apply_transform,
         prompt_builder_fn=PurePromptBuilder if "v01" not in cfg.vla_path else VicunaV15ChatPromptBuilder,
     )
-    vla_dataset = RLDSDataset(
+
+    # === Training Dataset ===
+    train_dataset = RLDSDataset(
         cfg.data_root_dir,
         cfg.dataset_name,
         batch_transform,
         resize_resolution=tuple(vla.module.config.image_sizes),
         shuffle_buffer_size=cfg.shuffle_buffer_size,
         image_aug=cfg.image_aug,
+        train=True, 
     )
+
+    val = False
+    if val:
+        # === Validation Dataset ===
+        val_dataset = RLDSDataset(
+            cfg.data_root_dir,
+            cfg.dataset_name,
+            batch_transform,
+            resize_resolution=tuple(vla.module.config.image_sizes),
+            shuffle_buffer_size=cfg.shuffle_buffer_size,
+            image_aug=False,  
+            train=False,  
+        )
+
+
+
+
+
+
+
+
 
     # [Important] Save Dataset Statistics =>> used to de-normalize actions for inference!
     if distributed_state.is_main_process:
-        save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+        save_dataset_statistics(train_dataset.dataset_statistics, run_dir)
 
     # Create Collator and DataLoader
     collator = PaddedCollatorForActionPrediction(
         processor.tokenizer.model_max_length, processor.tokenizer.pad_token_id, padding_side="right"
     )
-    dataloader = DataLoader(
-        vla_dataset,
+    train_dataloader = DataLoader(
+        train_dataset,
         batch_size=cfg.batch_size,
         sampler=None,
         collate_fn=collator,
         num_workers=0,  # Important =>> Set to 0 if using RLDS; TFDS rolls its own parallelism!
     )
+    
+    if val:
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=cfg.batch_size,
+            sampler=None,
+            collate_fn=collator,
+            num_workers=0,
+        )
 
     # Initialize Logging =>> W&B
     if distributed_state.is_main_process:
@@ -258,7 +339,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
-        for batch_idx, batch in enumerate(dataloader):
+        for batch_idx, batch in enumerate(train_dataloader):
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 output: CausalLMOutputWithPast = vla(
                     input_ids=batch["input_ids"].to(device_id),
@@ -308,16 +389,22 @@ def finetune(cfg: FinetuneConfig) -> None:
             smoothened_action_accuracy = sum(recent_action_accuracies) / len(recent_action_accuracies)
             smoothened_l1_loss = sum(recent_l1_losses) / len(recent_l1_losses)
 
+                        # Run validation every 500 gradient steps
+            if val and distributed_state.is_main_process and gradient_step_idx % 10 == 0 and gradient_step_idx > 0:
+                val_metrics = run_validation(vla, val_dataloader, device_id, action_tokenizer)
+                wandb.log(val_metrics, step=gradient_step_idx)
+                #print(f"Validation @ Step {gradient_step_idx}:", val_metrics)
+
+
             # Push Metrics to W&B (every 10 gradient steps)
             if distributed_state.is_main_process and gradient_step_idx % 10 == 0:
-                wandb.log(
-                    {
-                        "train_loss": smoothened_loss,
-                        "action_accuracy": smoothened_action_accuracy,
-                        "l1_loss": smoothened_l1_loss,
-                    },
-                    step=gradient_step_idx,
-                )
+                train_metrics = {
+                    "train_loss": smoothened_loss,
+                    "action_accuracy": smoothened_action_accuracy,
+                    "l1_loss": smoothened_l1_loss,
+                }
+                wandb.log(train_metrics, step=gradient_step_idx)
+                #print(f"Train @ Step {gradient_step_idx}:", train_metrics)
 
             # Optimizer Step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
@@ -360,7 +447,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                             os.makedirs(checkpoint_dir, exist_ok=True)
 
                             # Save dataset statistics to new directory
-                            save_dataset_statistics(vla_dataset.dataset_statistics, checkpoint_dir)
+                            save_dataset_statistics(train_dataset.dataset_statistics, checkpoint_dir)
 
                             # Save processor and model weights to new directory
                             processor.save_pretrained(checkpoint_dir)
