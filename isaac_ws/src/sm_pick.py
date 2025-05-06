@@ -802,6 +802,11 @@ def run_simulator(env, env_cfg, args_cli):
 
     while simulation_app.is_running():
 
+        # if pick_sm.sm_state[0].item() == PickSmState.REST:
+        #     joint_pos = robot.data.joint_pos.clone()
+        #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+
+
 
         if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
             table_image_array = take_image(camera_index, camera, rep_writer)

@@ -8,7 +8,7 @@
 # Iaaclab -> quaternion -> scalar first order [w, x, y, z]
 
 OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
-OPENVLA_UNNORM_KEY = "bridge_orig" # TODO check if this is correct -> sim_data_custom_v0
+OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False
 
@@ -283,7 +283,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
 
     object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.2], rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -471,6 +471,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             # Initialization - move to home position
             joint_pos = robot.data.default_joint_pos.clone()
+            # print("\n\nINITIAL JOINT POS", joint_pos) # [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
             joint_vel = robot.data.default_joint_vel.clone()
             robot.write_joint_state_to_sim(joint_pos, joint_vel)
             robot.reset()
