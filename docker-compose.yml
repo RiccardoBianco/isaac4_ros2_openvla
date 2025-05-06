@@ -1,8 +1,7 @@
 services:
   isaac_sim:
-    image: nvcr.io/nvidia/isaac-sim:4.5.0
+    build: ./isaac_ws
     container_name: isaac-sim
-    entrypoint: bash
     runtime: nvidia
     environment:
       - DISPLAY=${DISPLAY}
@@ -21,22 +20,26 @@ services:
   ros2_humble:
     image: osrf/ros:humble-desktop-full-jammy
     container_name: ros2_humble
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - SDL_VIDEODRIVER=x11
     volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
       - ./humble_ws:/root/humble_ws
       - ./bashrc_ros2:/root/.bashrc
     network_mode: host
     stdin_open: true
     tty: true
-
-  ros1_bridge:
-    image: osrf/ros:foxy-ros1-bridge
-    container_name: ros1_bridge
-    volumes:
-      - ./ros1_bridge:/root/ros1_bridge
-    network_mode: host
-    stdin_open: true
-    tty: true
-    environment:
-      - ROS_MASTER_URI=http://localhost:11311
-      - ROS_IP=127.0.0.1
-
+    
+#  ros1_bridge:
+#    image: osrf/ros:foxy-ros1-bridge
+#    container_name: ros1_bridge
+#    volumes:
+#      - ./ros1_bridge:/root/ros1_bridge
+#    network_mode: host
+#    stdin_open: true
+#    tty: true
+#    environment:
+#      - ROS_MASTER_URI=http://localhost:11311
+#      - ROS_IP=127.0.0.1

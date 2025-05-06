@@ -20,6 +20,6 @@ setup(
     maintainer_email="isaac-sim@todo.todo",
     description="Package to set goals for navigation stack.",
     license="NVIDIA Isaac ROS Software License",
-    tests_require=["pytest"],
+    #tests_require=["pytest"],
     entry_points={"console_scripts": ["SetNavigationGoal = isaac_ros_navigation_goal.set_goal:main"]},
 )

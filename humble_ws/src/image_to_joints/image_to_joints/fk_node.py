@@ -16,7 +16,7 @@ class DirectKinematics(Node):
         # Subscriber to joint states
         self.subscription = self.create_subscription(
             JointState,
-            '/joint_states',
+            '/joint_states_2',
             self.joint_state_callback,
             1
         )
@@ -24,6 +24,11 @@ class DirectKinematics(Node):
         # Publisher for pose
         self.publisher = self.create_publisher(PoseStamped, '/cartesian_impedance_example_controller/measured_pose', 1)
         self.get_logger().info("Direct kinematics node initialized.")
+
+        self.joint_variables = None
+
+        self.timer = self.create_timer(1.0, self.process_joint_state)
+
 
     def dh_params(self, joint_variables):
         M_PI = math.pi
@@ -52,10 +57,19 @@ class DirectKinematics(Node):
         if len(msg.position) < 7:
             self.get_logger().warn("JointState message does not contain 7 joints.")
             return
+        # self.get_logger().info(f"Received joint states!")
+        self.joint_variables = msg.position[:7]
+    
 
-        joint_variables = msg.position[:7]
-        dh = self.dh_params(joint_variables)
+        
 
+    def process_joint_state(self):
+        self.get_logger().info(f"Joint state: {self.joint_variables}")
+        if self.joint_variables is None:
+            self.get_logger().warn("Joint variables not received yet.")
+            return
+        
+        dh = self.dh_params(self.joint_variables)
         T = np.eye(4)
         for i in range(7):
             T = np.dot(T, self.tf_matrix(i, dh))
@@ -77,7 +91,7 @@ class DirectKinematics(Node):
         pose_msg.pose.orientation.w = quaternion[3]
 
         self.publisher.publish(pose_msg)
-        self.get_logger().debug(f"Published pose: {pose_msg}")
+        #self.get_logger().info(f"Published pose: {pose_msg}")
 
 
 def main(args=None):

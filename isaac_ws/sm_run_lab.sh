@@ -1,0 +1,1 @@
+ ~/IsaacLab/isaaclab.sh -p isaac_ws/src/sm_pick.py --save --enable_cameras

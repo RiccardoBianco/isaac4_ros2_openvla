@@ -17,11 +17,12 @@ setup(
     maintainer_email='root@todo.todo',
     description='TODO: Package description',
     license='TODO: License declaration',
-    tests_require=['pytest'],
+    #tests_require=['pytest'],
     entry_points={
     'console_scripts': [
         'image_to_joints = image_to_joints.image_to_joints_node:main',
         'fk_node = image_to_joints.fk_node:main',
+        'test_moveit = image_to_joints.test_moveit:main',
     ],
 },
 )
