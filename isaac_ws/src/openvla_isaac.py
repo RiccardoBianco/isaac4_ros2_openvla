@@ -12,6 +12,9 @@ OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False
 
+OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in sm_pick.py
+TARGET_POS = (0.4, 0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
+
 
 import argparse
 from isaaclab.app import AppLauncher
@@ -276,14 +279,15 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(0.5, 0.4, 0.0),  # Posizione iniziale
+                    pos=TARGET_POS,  # Posizione iniziale
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
 
+
     object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.55, -0.2, 0.2], rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
+            init_state=RigidObjectCfg.InitialStateCfg(pos=OBJECT_POS, rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),

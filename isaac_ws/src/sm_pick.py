@@ -25,6 +25,8 @@ SAVE = True
 CAMERA_HEIGHT = 256
 CAMERA_WIDTH = 256
 
+INIT_OBJECT_POS = [0.5, 0, 0.055]
+
 import argparse
 
 from isaaclab.app import AppLauncher
@@ -244,10 +246,12 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         self.scene.light = AssetBaseCfg(
             prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         )
+
+
         # TODO understand how to set the object different from this cube
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -301,7 +305,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(0.5, 0.4, 0.0),  # Posizione iniziale
+                    pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
