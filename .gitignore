@@ -50,6 +50,7 @@ Desktop.ini
 *.so
 *.dll
 *.exe
+*.err
 
 # Log e debug
 *.log
@@ -81,3 +82,4 @@ rlds_dataset_builder/sim_data_custom_v0/data
 *cache*
 
 models/
+

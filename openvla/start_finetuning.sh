@@ -1,14 +1,14 @@
 torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
   --vla_path "openvla/openvla-7b" \
-  --data_root_dir "/home/wanghan/tensorflow_datasets" \
+  --data_root_dir "/cluster/scratch/fbondi/tensorflow_datasets" \
   --dataset_name sim_data_custom_v0 \
-  --run_root_dir "/home/wanghan/tensorflow_datasets/sim_data_custom_v0/1.0.0/logs" \
-  --adapter_tmp_dir "/home/wanghan/tensorflow_datasets/sim_data_custom_v0/1.0.0/adapter_tmp" \
+  --run_root_dir "/cluster/scratch/fbondi/finetuning_openvla/logs" \
+  --adapter_tmp_dir "/cluster/scratch/fbondi/finetuning_openvla/adapter_tmp" \
   --lora_rank 32 \
-  --batch_size 2 \
-  --grad_accumulation_steps 8 \
+  --batch_size 16 \
+  --grad_accumulation_steps 1 \
   --learning_rate 5e-4 \
   --image_aug True \
   --wandb_project openvla \
   --wandb_entity rbianco-eth-z-rich \
-  --save_steps 1000
+  --save_steps 2500
