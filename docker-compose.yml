@@ -31,4 +31,15 @@ services:
     network_mode: host
     stdin_open: true
     tty: true
-  
+    
+#  ros1_bridge:
+#    image: osrf/ros:foxy-ros1-bridge
+#    container_name: ros1_bridge
+#    volumes:
+#      - ./ros1_bridge:/root/ros1_bridge
+#    network_mode: host
+#    stdin_open: true
+#    tty: true
+#    environment:
+#      - ROS_MASTER_URI=http://localhost:11311
+#      - ROS_IP=127.0.0.1
