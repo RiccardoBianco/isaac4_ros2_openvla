@@ -24,8 +24,12 @@ SAVE = True
 
 CAMERA_HEIGHT = 256
 CAMERA_WIDTH = 256
+CAMERA_POSITION = [0.9, -0.5, 0.8]
+CAMERA_TARGET = [0.25, 0.0, 0.0]
 
 INIT_OBJECT_POS = [0.5, 0, 0.055]
+
+
 
 import argparse
 
@@ -781,8 +785,8 @@ def run_simulator(env, env_cfg, args_cli):
     )
 
     # Set the camera position and target (wrist camera is already attached to the robot in the config)
-    camera_positions = torch.tensor([[1.0, -0.7, 0.8]], device=env.unwrapped.device)
-    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=env.unwrapped.device)
+    camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
+    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     camera_index = args_cli.camera_id
 
@@ -908,7 +912,7 @@ def run_simulator(env, env_cfg, args_cli):
                 )
                 if RANDOM_CAMERA:
                     # Base position
-                    base_camera_position = torch.tensor([1.0, -0.5, 0.8], device=env.unwrapped.device)
+                    base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
                     
                     # Random offset in [-0.3, 0.3]
                     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
@@ -916,7 +920,7 @@ def run_simulator(env, env_cfg, args_cli):
                     # Final camera position
                     camera_positions = base_camera_position + random_offset
                     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-                    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=env.unwrapped.device)
+                    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
                     camera.set_world_poses_from_view(camera_positions, camera_targets)
 
 

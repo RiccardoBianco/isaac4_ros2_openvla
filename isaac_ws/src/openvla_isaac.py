@@ -15,6 +15,10 @@ VISUALIZE_MARKERS = False
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in sm_pick.py
 TARGET_POS = (0.4, 0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
 
+CAMERA_HEIGHT = 256
+CAMERA_WIDTH = 256
+CAMERA_POSITION = [0.9, -0.5, 0.8]
+CAMERA_TARGET = [0.25, 0.0, 0.0]
 
 import argparse
 from isaaclab.app import AppLauncher
@@ -329,8 +333,8 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     camera = CameraCfg(
         prim_path="/World/CameraSensor",
         update_period=0,
-        height=256,
-        width=256,
+        height=CAMERA_HEIGHT,
+        width=CAMERA_WIDTH,
         data_types=[
             "rgb",
         ],
@@ -387,8 +391,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     )
 
     # Camera positions, targets, orientations
-    camera_positions = torch.tensor([[1.0, -0.7, 0.8]], device=sim.device)
-    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=sim.device)
+    camera_positions = torch.tensor([CAMERA_POSITION], device=sim.device)
+    camera_targets = torch.tensor([CAMERA_TARGET], device=sim.device)
     # These orientations are in ROS-convention, and will position the cameras to view the origin
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     # Index of the camera to use for visualization and saving
