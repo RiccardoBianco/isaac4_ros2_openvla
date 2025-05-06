@@ -17,8 +17,8 @@ TARGET_POS = (0.4, 0.35, 0.0) # Must be equal to target range in lift_env_cfg_pe
 
 CAMERA_HEIGHT = 256
 CAMERA_WIDTH = 256
-CAMERA_POSITION = [0.9, -0.5, 0.7]
-CAMERA_TARGET = [0.25, 0.0, 0.0]
+CAMERA_POSITION = [0.9, -0.4, 0.6]
+CAMERA_TARGET = [0.3, 0.0, -0.2]
 
 import argparse
 from isaaclab.app import AppLauncher

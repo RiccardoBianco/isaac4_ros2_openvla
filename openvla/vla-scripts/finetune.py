@@ -280,7 +280,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         train=True, 
     )
 
-    val = True
+    val = False 
     if val:
         # === Validation Dataset ===
         val_dataset = RLDSDataset(
