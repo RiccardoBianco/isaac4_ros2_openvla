@@ -109,26 +109,6 @@ from isaaclab.sim.spawners import UsdFileCfg
 ##
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
 
-SAVE_DATASET_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "plr_openvla_dataset")
-
-def save_step_npz(table_image_array, wrist_image_array, joint_angles, joint_velocities, instruction, step_id = 0, task_count=0):
-    """
-    Save a step of the simulation to a .npz file
-    # TODO NEED TO FINISH THE FUNCTION
-    """
-    folder_name = f"simulation_{task_count:03d}"
-    save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
-    os.makedirs(save_task_dir, exist_ok=True)
-    save_dict = {
-        "image": table_image_array.astype(np.uint8),
-        "wrist_image": wrist_image_array.astype(np.uint8), 
-        "state": joint_angles.cpu().numpy().astype(np.float32),  # shape: (9,)
-        "action": joint_velocities.cpu().numpy().astype(np.float32),  # shape: (9,)
-        "language_instruction": instruction,
-    }
-    np.savez_compressed(os.path.join(save_task_dir, f"step_{step_id:06d}.npz"), **save_dict)
-
-
 
 def scalar_first_to_last(q):
     w, x, y, z = q
@@ -757,6 +737,10 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
+    if next_num > 4500: #  Around ~30Gb -> ~28.8Gb --> becomes ~10Gb after rlds dataset conversion
+        simulation_app.close()
+        print("Maximum number of episodes reached. Exiting...")
+        exit(0)
 
     filename = f"episode_{next_num:03d}.npy"
     filepath = os.path.join(save_dir, filename)
@@ -953,12 +937,9 @@ def run_simulator(env, env_cfg, args_cli):
 def clear_img_folder():
     if os.path.exists("./isaac_ws/src/output/camera"):
         shutil.rmtree("./isaac_ws/src/output/camera")
-    if os.path.exists("./isaac_ws/src/output/plr_openvla_dataset"):
-        shutil.rmtree("./isaac_ws/src/output/plr_openvla_dataset")
     if os.path.exists("./isaac_ws/src/output/episodes"):
         shutil.rmtree("./isaac_ws/src/output/episodes")
     os.mkdir("./isaac_ws/src/output/camera")
-    os.mkdir("./isaac_ws/src/output/plr_openvla_dataset")
     os.mkdir("./isaac_ws/src/output/episodes")
 
 

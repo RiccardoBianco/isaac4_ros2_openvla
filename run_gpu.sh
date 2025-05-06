@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -n 10 # Request 4 cores (useful for parallel processing)
+#SBATCH -n 6 # Request 4 cores (useful for parallel processing)
 #SBATCH --time=04:00:00 # Set a short run-time (30 minutes)
 #SBATCH --mem-per-cpu=16000 # Request 1GB memory per CPU
 #SBATCH -J finetuning_openvla # Job name

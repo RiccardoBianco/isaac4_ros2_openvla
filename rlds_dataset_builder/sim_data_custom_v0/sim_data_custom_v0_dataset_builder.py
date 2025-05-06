@@ -49,7 +49,17 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                             dtype=np.float32,
                             doc='Robot state, consists of [7x robot joint angles, '
                                 '2x gripper position].',
-                        )
+                        ),
+                        'object_pose': tfds.features.Tensor(
+                            shape=(7,),
+                            dtype=np.float32,
+                            doc='Object pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
+                        ),
+                        'goal_pose': tfds.features.Tensor(
+                            shape=(7,),
+                            dtype=np.float32,
+                            doc='Goal pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
+                        ),
                     }),
                     # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY (we are not using the last scalar)
                     'action': tfds.features.Tensor(
@@ -125,6 +135,8 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         'image': step['image'],
                         'wrist_image': step['wrist_image'],
                         'state': step['state'],
+                        'object_pose': step['object_pose'],
+                        'goal_pose': step['goal_pose'],
                     },
                     'action': step['action'],
                     'discount': 1.0,
