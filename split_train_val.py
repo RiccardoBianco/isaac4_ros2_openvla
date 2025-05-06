@@ -1,3 +1,13 @@
+####################################################################
+# ^ This script splits a collected dataset (using Isaac Sim) into
+# ^ training and validation sets. It takes a directory of images and
+# ^ splits them into two subdirectories: 'train' and 'val'.
+# ^ The split is done based on a specified ratio (default is 80% train, 20% val).
+#
+# ! Each episode (trajectory) has to be a single .npy file, under the 
+# ! directory 'episodes'.
+########################################################################
+
 import os
 import shutil
 import math

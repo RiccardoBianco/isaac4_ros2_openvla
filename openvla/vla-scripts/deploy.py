@@ -52,13 +52,15 @@ import argparse
 # === Globals ===
 SERVER_SIDE_FOLDER = "server_side_images"
 DEFAULT_IMAGE_NAME = "received_image"
-OPENVLA_MODEL = "openvla/openvla-7b"
+BASE_MODEL = "openvla/openvla-7b"
+FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/openvla-7b+sim_data_custom_v0+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug"
+OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path
 
 
 # === Command Line Arguments ===
 parser = argparse.ArgumentParser(description="Get command line arguments")
-parser.add_argument('--save', default=0, help="Flag to save the images (server-side)")
 # Parse the arguments
+parser.add_argument("--save", action="store_true", help="Save images to server-side folder")
 args = parser.parse_args()
 
 # === Utilities ===
@@ -69,6 +71,7 @@ SYSTEM_PROMPT = (
 
 
 def get_openvla_prompt(instruction: str, openvla_path: Union[str, Path]) -> str:
+    # TODO: check because we trained with a different prompt, here it's being concatenated with other
     if "v01" in openvla_path:
         return f"{SYSTEM_PROMPT} USER: What action should the robot take to {instruction.lower()}? ASSISTANT:"
     else:
@@ -207,8 +210,13 @@ def deploy(cfg: DeployConfig) -> None:
     if args.save:
         clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
-    server.run(cfg.host, port=cfg.port)
 
+    if cfg.openvla_path == FINETUNED_MODEL:
+        print("Using finetuned model")
+    elif cfg.openvla_path == BASE_MODEL:
+        print("Using base model")
+
+    server.run(cfg.host, port=cfg.port)
 
 if __name__ == "__main__":
     deploy()

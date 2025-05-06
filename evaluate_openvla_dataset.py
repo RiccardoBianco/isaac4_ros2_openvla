@@ -69,7 +69,7 @@ def main():
     total_correct = 0
 
     for ep_idx, episode_path in enumerate(episode_paths):
-        print(f"Processing {episode_path}")
+        print(f"\n\nProcessing {episode_path}")
         episode_data = np.load(episode_path, allow_pickle=True)
 
         ep_total = 0
@@ -93,28 +93,34 @@ def main():
                 continue
 
             # Simple accuracy: all elements within a threshold
-            threshold = 0.05 
-            is_correct = np.allclose(gt_action, res, atol=threshold)
+            threshold = 0.001 
+            is_correct = np.allclose(gt_action[:6], res[:6], atol=threshold)
+            gripper_correct = np.isclose(gt_action[6], res[6], atol=0.05)
 
-            if is_correct:
+            if is_correct and gripper_correct:
                 print(f"Episode {ep_idx}, Step {step_idx}: CORRECT")
                 # print(f"    GT: {gt_action}")
                 # print(f"    Pred: {res}")
                 ep_correct += 1
             else:
-                print(f"Episode {ep_idx}, Step {step_idx}: INCORRECT")
-                # print(f"    GT: {gt_action}")
-                # print(f"    Pred: {res}")
+                if not is_correct:
+                    print(f"Episode {ep_idx}, Step {step_idx}: INCORRECT POSE")
+                    print(f"GT: {gt_action}")
+                    print(f"Pred: {res}")
+                if not gripper_correct:
+                    print(f"Episode {ep_idx}, Step {step_idx}: INCORRECT GRIPPER")
+                    print(f"GT: {gt_action[6]}")
+                    print(f"Pred: {res[6]}")
             ep_total += 1
         
         ep_accuracy = ep_correct / ep_total if ep_total > 0 else 0.0
-        print(f"Episode {ep_idx} accuracy: {ep_accuracy:.2%}")
+        print(f"\n\nEpisode {ep_idx} accuracy: {ep_accuracy:.2%}\n\n")
 
         total_steps += ep_total
         total_correct += ep_correct
     
     avg_accuracy = total_correct / total_steps if total_steps > 0 else 0.0
-    print(f"Average accuracy across all episodes: {avg_accuracy:.2%}")
+    print(f"\n\nAverage accuracy across all episodes: {avg_accuracy:.2%}\n\n")
 
 
 
