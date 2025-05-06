@@ -777,8 +777,8 @@ def run_simulator(env, env_cfg, args_cli):
     )
 
     # Set the camera position and target (wrist camera is already attached to the robot in the config)
-    camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=env.unwrapped.device)
-    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
+    camera_positions = torch.tensor([[1.0, -0.7, 0.8]], device=env.unwrapped.device)
+    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     camera_index = args_cli.camera_id
 
@@ -805,12 +805,24 @@ def run_simulator(env, env_cfg, args_cli):
         # if pick_sm.sm_state[0].item() == PickSmState.REST:
         #     joint_pos = robot.data.joint_pos.clone()
         #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+        #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+        #     tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+        #     tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+
+        #     print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+        #     print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
+
+
 
 
 
         if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
             table_image_array = take_image(camera_index, camera, rep_writer)
             wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
+            # if count >= 10: # NOTE added ric to avoi saving too many images locally
+            #     if os.path.exists("./isaac_ws/src/output/camera"):
+            #         shutil.rmtree("./isaac_ws/src/output/camera")
+            #     os.mkdir("./isaac_ws/src/output/camera", exist_ok=True)
 
             
             # joint_vel = robot.data.joint_vel.clone()
@@ -825,6 +837,8 @@ def run_simulator(env, env_cfg, args_cli):
                     "image": table_image_array.astype(np.uint8),
                     "wrist_image": wrist_image_array.astype(np.uint8),
                     "language_instruction": OPENVLA_INSTRUCTION,
+                    "object_pose": object_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                    "goal_pose": goal_pose_to_save.clone().cpu().numpy().astype(np.float32),
                 }
 
                 # Add step to episode_data
@@ -842,6 +856,12 @@ def run_simulator(env, env_cfg, args_cli):
             tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
             # -- object frame
             object_data: RigidObjectData = env.unwrapped.scene["object"].data
+            object_pose_to_save = object_data.root_state_w[:, 0:7].clone()
+            # print("OBJECT POSE: ", object_pose_to_save)
+            goal_pose_to_save = env.unwrapped.command_manager.get_command("object_pose")[..., :7].clone()
+            # print("GOAL POSE: ", goal_pose_to_save)
+
+
             object_position = object_data.root_pos_w - env.unwrapped.scene.env_origins
             # -- target object frame
             desired_position = env.unwrapped.command_manager.get_command("object_pose")[..., :3]
@@ -884,7 +904,7 @@ def run_simulator(env, env_cfg, args_cli):
                 )
                 if RANDOM_CAMERA:
                     # Base position
-                    base_camera_position = torch.tensor([1.2, -0.2, 0.8], device=env.unwrapped.device)
+                    base_camera_position = torch.tensor([1.0, -0.5, 0.8], device=env.unwrapped.device)
                     
                     # Random offset in [-0.3, 0.3]
                     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
@@ -892,7 +912,7 @@ def run_simulator(env, env_cfg, args_cli):
                     # Final camera position
                     camera_positions = base_camera_position + random_offset
                     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-                    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=env.unwrapped.device)
+                    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=env.unwrapped.device)
                     camera.set_world_poses_from_view(camera_positions, camera_targets)
 
 

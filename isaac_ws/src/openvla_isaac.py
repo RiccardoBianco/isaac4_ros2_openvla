@@ -283,7 +283,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
 
     object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.2], rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.55, -0.2, 0.2], rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -383,8 +383,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     )
 
     # Camera positions, targets, orientations
-    camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=sim.device)
-    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=sim.device)
+    camera_positions = torch.tensor([[1.0, -0.7, 0.8]], device=sim.device)
+    camera_targets = torch.tensor([[0.1, 0.0, -0.3]], device=sim.device)
     # These orientations are in ROS-convention, and will position the cameras to view the origin
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     # Index of the camera to use for visualization and saving
@@ -432,7 +432,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     current_goal_idx = 0
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
-    ik_commands[:] = torch.tensor([0.5, 0.0, 0.4, 0, 1, 0, 0], device=sim.device) # TODO check if necessary
+    # init_ee_pos = [0.5, 0.0, 0.4, 0, 1, 0, 0]
+    init_ee_pos = [4.4507e-01, 0,  4.0302e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+    ik_commands[:] = torch.tensor(init_ee_pos, device=sim.device) # TODO check if necessary
 
     # Specify robot-specific parameters
     if args_cli.robot == "franka_panda":
