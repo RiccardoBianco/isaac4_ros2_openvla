@@ -7,8 +7,8 @@
 # Scipy -> quaternion -> scalar last order [x, y, z, w]
 # Iaaclab -> quaternion -> scalar first order [w, x, y, z]
 
-OPENVLA_INSTRUCTION = "Pick up the red box"
-OPENVLA_UNNORM_KEY = "bridge_orig"
+OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
+OPENVLA_UNNORM_KEY = "bridge_orig" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False
 
@@ -263,6 +263,23 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     #     ),
     #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
     # )
+    box = RigidObjectCfg(
+                prim_path="/World/Box",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(0.5, 0.4, 0.0),  # Posizione iniziale
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
 
     object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
@@ -308,8 +325,8 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     camera = CameraCfg(
         prim_path="/World/CameraSensor",
         update_period=0,
-        height=1080,
-        width=1920,
+        height=256,
+        width=256,
         data_types=[
             "rgb",
         ],
