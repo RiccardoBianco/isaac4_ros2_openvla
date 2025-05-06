@@ -52,7 +52,17 @@ class ActionEncoding(IntEnum):
 
 # === Individual Dataset Configs ===
 OXE_DATASET_CONFIGS = {
-    # TODO modify this dataset config 
+    # TODO modify this dataset config if needed
+    # "sim_data_custom_v0": {
+    #     "image_obs_keys":   {"primary": "image", "secondary": "image_secondary",         "wrist": "wrist_image"},
+    #     "depth_obs_keys":   {"primary": None,             "secondary": None,         "wrist": None},
+    #     "state_obs_keys":   ["EEF_state", None, "gripper_state"],
+    #     "state_encoding":   StateEncoding.POS_EULER,
+    #     # if your actions are end‐effector positions, use EEF_POS
+    #     "action_encoding":  ActionEncoding.EEF_POS,
+    #     # New Parameters (TODO UNDERSTAND HOW TO MAKE OPENVLA WORK WITH THIS)
+    #     "camera_pose": [camera_pose],
+    # },
     "sim_data_custom_v0": {
         "image_obs_keys":   {"primary": "image", "secondary": None,         "wrist": "wrist_image"},
         "depth_obs_keys":   {"primary": None,             "secondary": None,         "wrist": None},

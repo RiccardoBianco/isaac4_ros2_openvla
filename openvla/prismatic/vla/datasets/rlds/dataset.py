@@ -138,6 +138,7 @@ def make_dataset_from_rlds(
                 f"Trajectory is missing keys: {REQUIRED_KEYS - set(traj.keys())}. " "Did you write a `standardize_fn`?"
             )
 
+        # TODO add support for new hypothetic parameters (second camera, camera_pose)
         # extracts images, depth images and proprio from the "observation" dict
         traj_len = tf.shape(traj["action"])[0]
         old_obs = traj["observation"]
