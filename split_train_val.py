@@ -41,13 +41,14 @@ def split_dataset(input_dir, output_dir, train_ratio=0.8):
     # Svuota (o crea) le cartelle
     empty_dir(train_dir)
     empty_dir(val_dir)
-
-    # Copia i file
+    # Sposta i file nel training set
     for f in train_files:
-        shutil.copy2(os.path.join(input_dir, f), os.path.join(train_dir, f))
+        shutil.move(os.path.join(input_dir, f), os.path.join(train_dir, f))
 
+    # Sposta i file nel validation set
     for f in val_files:
-        shutil.copy2(os.path.join(input_dir, f), os.path.join(val_dir, f))
+        shutil.move(os.path.join(input_dir, f), os.path.join(val_dir, f))
+
 
     print(f"Totale file: {total_files}")
     print(f"Train: {len(train_files)} file -> {train_dir}")
