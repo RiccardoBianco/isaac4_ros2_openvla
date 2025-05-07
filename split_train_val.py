@@ -32,7 +32,9 @@ def split_dataset(input_dir, output_dir, train_ratio=0.8):
     train_count = math.floor(total_files * train_ratio)
 
     train_files = all_files[:train_count]
+    print(f"Number of TRAIN files: {len(train_files)}")
     val_files = all_files[train_count:]
+    print(f"Number of VAL files: {len(val_files)}")
 
     # Percorsi delle cartelle
     train_dir = os.path.join(output_dir, 'train')
