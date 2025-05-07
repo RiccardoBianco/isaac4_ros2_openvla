@@ -720,12 +720,13 @@ def take_image(camera_index, camera, rep_writer, camera_type, sim_num):
 
             low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            file_name = f"{camera_type}_{timestamp}.png"
-            file_path = os.path.join(folder_dir, file_name)
+            if sim_num <= 3:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                file_name = f"{camera_type}_{timestamp}.png"
+                file_path = os.path.join(folder_dir, file_name)
 
-            # Save image as RGB PNG
-            low_res_image.save(file_path)
+                # Save image as RGB PNG
+                low_res_image.save(file_path)
 
 
                 
