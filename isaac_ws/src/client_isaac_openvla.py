@@ -6,8 +6,12 @@
 
 # Scipy -> quaternion -> scalar last order [x, y, z, w]
 # Iaaclab -> quaternion -> scalar first order [w, x, y, z]
+PICK_AND_PLACE = False
+if PICK_AND_PLACE: 
+    OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
+else:
+    OPENVLA_INSTRUCTION = "Pick the green cube and lift it. \n"
 
-OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False

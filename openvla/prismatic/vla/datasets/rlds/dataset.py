@@ -129,7 +129,7 @@ def make_dataset_from_rlds(
         REQUIRED_KEYS.add(language_key)
 
     def restructure(traj):
-        # apply a standardization function, if provided
+        # ^ apply a standardization function, if provided (such as 'sim_custom_data_v0_transform')
         if standardize_fn is not None:
             traj = standardize_fn(traj)
 

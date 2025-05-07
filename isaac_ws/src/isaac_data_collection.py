@@ -13,9 +13,13 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 """Launch Omniverse Toolkit first."""
 
-PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
+PICK_AND_PLACE = False # set to False to only pick and lift the object, bringing it back to the goal pose
 
-OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
+if PICK_AND_PLACE: 
+    OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
+else:
+    OPENVLA_INSTRUCTION = "Pick the green cube and lift it. \n"
+
 
 RANDOM_CAMERA = False
 
