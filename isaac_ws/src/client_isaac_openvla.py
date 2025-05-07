@@ -12,7 +12,6 @@ if PICK_AND_PLACE:
 else:
     OPENVLA_INSTRUCTION = "Pick the green cube and lift it. \n"
 
-OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n" # ^ TODO change
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
@@ -21,14 +20,17 @@ VISUALIZE_MARKERS = False
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
 TARGET_POS = (0.4, -0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
 
-CAMERA_HEIGHT = 256
-CAMERA_WIDTH = 256
+CAMERA_HEIGHT = 512
+CAMERA_WIDTH = 512
 
 
-# CAMERA_POSITION = [0.9, -0.4, 0.6]
+
 CAMERA_POSITION = [1.2, -0.2, 0.8]
-# CAMERA_TARGET = [0.3, 0.0, -0.2]
 CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+# CAMERA_POSITION = [0.9, -0.4, 0.6] # IGNORE THIS
+# CAMERA_TARGET = [0.3, 0.0, -0.2]
+
 
 CUBE_MULTICOLOR = False # ^ Change this to True if you want to use the multicolor cube
 

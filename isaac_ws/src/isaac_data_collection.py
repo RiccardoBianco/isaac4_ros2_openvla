@@ -13,7 +13,7 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 """Launch Omniverse Toolkit first."""
 
-PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
+PICK_AND_PLACE = False # set to False to only pick and lift the object, bringing it back to the goal pose
 
 if PICK_AND_PLACE: 
     OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
@@ -30,10 +30,13 @@ CAMERA_HEIGHT = 1920
 CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
-# CAMERA_POSITION = [0.9, -0.4, 0.6]
+
 CAMERA_POSITION = [1.2, -0.2, 0.8]
-# CAMERA_TARGET = [0.3, 0.0, -0.2]
 CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+# CAMERA_TARGET = [0.3, 0.0, -0.2]
+# CAMERA_POSITION = [0.9, -0.4, 0.6]
+
 
 INIT_OBJECT_POS = [0.5, 0, 0.055]
 
@@ -787,7 +790,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
 
-    filename = f"episode_{next_num:03d}.npy"
+    filename = f"episode_{next_num:04d}.npy"
     filepath = os.path.join(save_dir, filename)
 
     # Save
