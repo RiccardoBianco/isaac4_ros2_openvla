@@ -582,8 +582,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         # calcolo comando IK
 
-        
-
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
         # apply actions
         joint_pos_des = torch.cat((joint_pos_des, gripper_pos_des), dim=1).to(dtype=torch.float32)

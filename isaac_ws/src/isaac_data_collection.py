@@ -13,7 +13,7 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 """Launch Omniverse Toolkit first."""
 
-PICK_AND_PLACE = False # set to False to only pick and lift the object, bringing it back to the goal pose
+PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
 if PICK_AND_PLACE: 
     OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
@@ -23,7 +23,7 @@ else:
 
 RANDOM_CAMERA = False
 
-SAVE_EVERY_ITERATIONS = 10
+SAVE_EVERY_ITERATIONS = 6
 SAVE = True
 
 CAMERA_HEIGHT = 1920
@@ -78,6 +78,7 @@ import numpy as np
 import os
 import shutil
 from datetime import datetime
+import json
 
 from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
 
@@ -416,7 +417,7 @@ class PickSmState:
 class PickSmWaitTime:
     """Additional wait times (in s) for states for before switching."""
 
-    REST = wp.constant(0.5)
+    REST = wp.constant(1.0)
     APPROACH_ABOVE_OBJECT = wp.constant(0.5)
     APPROACH_OBJECT = wp.constant(0.6)
     GRASP_OBJECT = wp.constant(0.3)
@@ -681,7 +682,7 @@ def assign_material(object_path, material_path):
     else:
         print("Errore: Primitiva o materiale non trovati.")
 
-def take_image(camera_index, camera, rep_writer, camera_type, sim_num):
+def take_image(camera_index, camera, camera_type, sim_num):
     """
     Take an image from the camera and save it using the replicator writer.
     Args:
@@ -696,26 +697,11 @@ def take_image(camera_index, camera, rep_writer, camera_type, sim_num):
             {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
         )
 
-        # Extract the other information
-        # single_cam_info = camera.data.info[camera_index]
-
-        # # Pack data back into replicator format to save them using its writer
-        # rep_output = {"annotators": {}}
-        # for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
-        #     if info is not None:
-        #         rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
-        #     else:
-        #         rep_output["annotators"][key] = {"render_product": {"data": data}}
-        # # Save images
-        # # Note: We need to provide On-time data for Replicator to save the images.
-        # rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
-        # rep_writer.write(rep_output)
 
         # Extract the image data (assuming 'rgb' is the key)
         image_data = single_cam_data.get('rgb')
 
-        folder_dir = f"./isaac_ws/src/output/camera/simulation_{sim_num}"
-        os.makedirs(folder_dir, exist_ok=True)
+
         
         if image_data is not None:
             image_data = image_data.astype(np.uint8)
@@ -726,6 +712,9 @@ def take_image(camera_index, camera, rep_writer, camera_type, sim_num):
             if sim_num <= 3:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 file_name = f"{camera_type}_{timestamp}.png"
+
+                folder_dir = f"./isaac_ws/src/output/camera/simulation_{sim_num}"
+                os.makedirs(folder_dir, exist_ok=True)
                 file_path = os.path.join(folder_dir, file_name)
 
                 # Save image as RGB PNG
@@ -785,7 +774,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 4500: #  Around ~30Gb -> ~28.8Gb --> becomes ~10Gb after rlds dataset conversion
+    if next_num > 3000: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -799,25 +788,55 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
 
 def update_save_every_iterations(state):
     if state == PickSmState.APPROACH_ABOVE_OBJECT: 
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.APPROACH_OBJECT:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.GRASP_OBJECT:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.LIFT_OBJECT:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.PLACE_ON_GOAL:
-        return 3
+        return 2
     elif state == PickSmState.PLACE_BELOW_GOAL:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.RELEASE_OBJECT:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.RETURN_HOME:
-        return 10
+        return SAVE_EVERY_ITERATIONS
     else:
-        return 10
+        return SAVE_EVERY_ITERATIONS
 
 def run_simulator(env, env_cfg, args_cli):
+    ### Create the config file with the Global Parameters defined in the current run
+    config = {
+        "PICK_AND_PLACE": PICK_AND_PLACE,
+        "OPENVLA_INSTRUCTION": OPENVLA_INSTRUCTION,
+        "CUBE_MULTICOLOR": CUBE_MULTICOLOR,
+        "RANDOM_CAMERA": RANDOM_CAMERA,
+        "CAMERA_POSITION": CAMERA_POSITION,
+        "CAMERA_TARGET": CAMERA_TARGET,
+        "CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
+        "CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
+        "SAVE_EVERY_ITERATIONS": SAVE_EVERY_ITERATIONS,
+    }
+
+    # Create output directory
+    config_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output")
+    os.makedirs(config_dir, exist_ok=True)
+
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"config_{timestamp}.json"
+    config_file_path = os.path.join(config_dir, filename)
+
+    # Write to JSON
+    with open(config_file_path, "w") as config_file:
+        json.dump(config, config_file, indent=4)
+
+    print(f"✅ Config saved to: {config_file_path}")
+
+    ###################
+
     camera = env.unwrapped.scene["camera"]
     wrist_camera = env.unwrapped.scene["wrist_camera"]
 
@@ -828,13 +847,13 @@ def run_simulator(env, env_cfg, args_cli):
     # ^ Temporary data structure for saving ["state", "action", "image", "wrist_image", "language_instruction"] for each step
     episode_data = []
 
-    rep_writer = rep.BasicWriter(
-        output_dir=os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera"), # don't save the first sim
-        frame_padding=0,
-        colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
-        colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
-        colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
-    )
+    # rep_writer = rep.BasicWriter(
+    #     output_dir=os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera"), # don't save the first sim
+    #     frame_padding=0,
+    #     colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+    #     colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+    #     colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+    # )
 
     # Set the camera position and target (wrist camera is already attached to the robot in the config)
     camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
@@ -877,13 +896,13 @@ def run_simulator(env, env_cfg, args_cli):
 
 
 
-        SAVE_EVERY_ITERATIONS = update_save_every_iterations(pick_sm.sm_state[0].item())
+        save_every_iterations = update_save_every_iterations(pick_sm.sm_state[0].item())
 
 
 
-        if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
-            table_image_array = take_image(camera_index, camera, rep_writer, camera_type="table", sim_num=task_count-1)
-            wrist_image_array = take_image(camera_index, wrist_camera, rep_writer, camera_type="wrist", sim_num=task_count-1)
+        if count % save_every_iterations == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
+            table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
+            wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
             # if count >= 10: # NOTE added ric to avoi saving too many images locally
             #     if os.path.exists("./isaac_ws/src/output/camera"):
             #         shutil.rmtree("./isaac_ws/src/output/camera")
@@ -961,13 +980,13 @@ def run_simulator(env, env_cfg, args_cli):
                     # ^ Reset the data structures
                     episode_data = []
                 count = 0
-                rep_writer = rep.BasicWriter(
-                    output_dir=get_next_simulation_folder(),
-                    frame_padding=0,
-                    colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
-                    colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
-                    colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
-                )
+                # rep_writer = rep.BasicWriter(
+                #     output_dir=get_next_simulation_folder(),
+                #     frame_padding=0,
+                #     colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+                #     colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+                #     colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+                # )
                 if RANDOM_CAMERA:
                     # Base position
                     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
