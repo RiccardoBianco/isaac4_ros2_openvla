@@ -12,23 +12,27 @@ if PICK_AND_PLACE:
 else:
     OPENVLA_INSTRUCTION = "Pick the green cube and lift it. \n"
 
+OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n" # ^ TODO change
+
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False
 
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
-TARGET_POS = (0.4, 0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
+TARGET_POS = (0.4, -0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
 
-CAMERA_HEIGHT = 512
-CAMERA_WIDTH = 512
-CAMERA_POSITION = [0.9, -0.4, 0.6]
-OLD_CAMERA_POSITION = [1.2, -0.2, 0.8]
-CAMERA_TARGET = [0.3, 0.0, -0.2]
-OLD_CAMERA_TARGET = [0.0, 0.0, -0.3]
+CAMERA_HEIGHT = 256
+CAMERA_WIDTH = 256
+
+
+# CAMERA_POSITION = [0.9, -0.4, 0.6]
+CAMERA_POSITION = [1.2, -0.2, 0.8]
+# CAMERA_TARGET = [0.3, 0.0, -0.2]
+CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+CUBE_MULTICOLOR = False # ^ Change this to True if you want to use the multicolor cube
 
 # ^ Change this to the desired camera position and target
-CAMERA_POSITION = OLD_CAMERA_POSITION
-CAMERA_TARGET = OLD_CAMERA_TARGET
 
 import argparse
 from isaaclab.app import AppLauncher
@@ -298,41 +302,41 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 ),
             )
 
-
-    # object = RigidObjectCfg(
-    #         prim_path="{ENV_REGEX_NS}/Object",
-    #         init_state=RigidObjectCfg.InitialStateCfg(pos=OBJECT_POS, rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
-    #         spawn=sim_utils.UsdFileCfg(
-    #             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-    #             scale=(0.8, 0.8, 0.8),
-    #             rigid_props=RigidBodyPropertiesCfg(
-    #                 solver_position_iteration_count=16,
-    #                 solver_velocity_iteration_count=1,
-    #                 max_angular_velocity=1000.0,
-    #                 max_linear_velocity=1000.0,
-    #                 max_depenetration_velocity=5.0,
-    #                 disable_gravity=False,
-    #             ),
-    #         ),
-    #     )
-    
-    object = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Object",
-            spawn=sim_utils.CuboidCfg(
-                size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
-                    metallic=0.0
+    if CUBE_MULTICOLOR:
+        object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                init_state=RigidObjectCfg.InitialStateCfg(pos=OBJECT_POS, rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
+                spawn=sim_utils.UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                    scale=(0.8, 0.8, 0.8),
+                    rigid_props=RigidBodyPropertiesCfg(
+                        solver_position_iteration_count=16,
+                        solver_velocity_iteration_count=1,
+                        max_angular_velocity=1000.0,
+                        max_linear_velocity=1000.0,
+                        max_depenetration_velocity=5.0,
+                        disable_gravity=False,
+                    ),
                 ),
-            ),
-            init_state=RigidObjectCfg.InitialStateCfg(
-                pos=OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
-                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-            ),
-        )
+            )
+    else:
+        object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
     
     # sugar_box = AssetBaseCfg(
     #     prim_path="/World/SugarBox",
@@ -606,7 +610,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
      
 
-def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.1):
+def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.01):
     goal_pos = ik_commands[:, 0:3]
     goal_quat = ik_commands[:, 3:7]
     current_pos = ee_pose_w[:, 0:3]

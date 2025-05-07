@@ -13,7 +13,7 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 """Launch Omniverse Toolkit first."""
 
-PICK_AND_PLACE = False # set to False to only pick and lift the object, bringing it back to the goal pose
+PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
 if PICK_AND_PLACE: 
     OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
@@ -26,18 +26,19 @@ RANDOM_CAMERA = False
 SAVE_EVERY_ITERATIONS = 10
 SAVE = True
 
-CAMERA_HEIGHT = 512
-CAMERA_WIDTH = 512
-CAMERA_POSITION = [0.9, -0.4, 0.6]
-OLD_CAMERA_POSITION = [1.2, -0.2, 0.8]
-CAMERA_TARGET = [0.3, 0.0, -0.2]
-OLD_CAMERA_TARGET = [0.0, 0.0, -0.3]
+CAMERA_HEIGHT = 1920
+CAMERA_WIDTH = 1920
+OPENVLA_CAMERA_HEIGHT = 256
+OPENVLA_CAMERA_WIDTH = 256
+# CAMERA_POSITION = [0.9, -0.4, 0.6]
+CAMERA_POSITION = [1.2, -0.2, 0.8]
+# CAMERA_TARGET = [0.3, 0.0, -0.2]
+CAMERA_TARGET = [0.0, 0.0, -0.3]
 
 INIT_OBJECT_POS = [0.5, 0, 0.055]
 
-# ^ Change this to the desired camera position and target
-CAMERA_POSITION = OLD_CAMERA_POSITION
-CAMERA_TARGET = OLD_CAMERA_TARGET
+
+CUBE_MULTICOLOR = False
 
 import argparse
 
@@ -73,7 +74,7 @@ import warp as wp
 import numpy as np
 import os
 import shutil
-
+from datetime import datetime
 
 from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
 
@@ -240,23 +241,41 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
 
-        # # TODO understand how to set the object different from this cube
-        # self.scene.object = RigidObjectCfg(
-        #     prim_path="{ENV_REGEX_NS}/Object",
-        #     init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
-        #     spawn=UsdFileCfg(
-        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-        #         scale=(0.8, 0.8, 0.8),
-        #         rigid_props=RigidBodyPropertiesCfg(
-        #             solver_position_iteration_count=16,
-        #             solver_velocity_iteration_count=1,
-        #             max_angular_velocity=1000.0,
-        #             max_linear_velocity=1000.0,
-        #             max_depenetration_velocity=5.0,
-        #             disable_gravity=False,
-        #         ),
-        #     ),
-        # )
+        if CUBE_MULTICOLOR:
+            self.scene.object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
+                spawn=UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                    scale=(0.8, 0.8, 0.8),
+                    rigid_props=RigidBodyPropertiesCfg(
+                        solver_position_iteration_count=16,
+                        solver_velocity_iteration_count=1,
+                        max_angular_velocity=1000.0,
+                        max_linear_velocity=1000.0,
+                        max_depenetration_velocity=5.0,
+                        disable_gravity=False,
+                    ),
+                ),
+            )
+        else: 
+            self.scene.object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
 
         # self.scene.box = AssetBaseCfg(
         #     prim_path="/World/CrakerBox",
@@ -303,23 +322,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             )
         
 
-        self.scene.object = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object",
-                spawn=sim_utils.CuboidCfg(
-                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
-                        metallic=0.0
-                    ),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
+
 
 
 
@@ -410,7 +413,7 @@ class PickSmState:
 class PickSmWaitTime:
     """Additional wait times (in s) for states for before switching."""
 
-    REST = wp.constant(1.5)
+    REST = wp.constant(0.5)
     APPROACH_ABOVE_OBJECT = wp.constant(0.5)
     APPROACH_OBJECT = wp.constant(0.6)
     GRASP_OBJECT = wp.constant(0.3)
@@ -675,7 +678,7 @@ def assign_material(object_path, material_path):
     else:
         print("Errore: Primitiva o materiale non trovati.")
 
-def take_image(camera_index, camera, rep_writer):
+def take_image(camera_index, camera, rep_writer, camera_type, sim_num):
     """
     Take an image from the camera and save it using the replicator writer.
     Args:
@@ -691,28 +694,42 @@ def take_image(camera_index, camera, rep_writer):
         )
 
         # Extract the other information
-        single_cam_info = camera.data.info[camera_index]
+        # single_cam_info = camera.data.info[camera_index]
 
-        # Pack data back into replicator format to save them using its writer
-        rep_output = {"annotators": {}}
-        for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
-            if info is not None:
-                rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
-            else:
-                rep_output["annotators"][key] = {"render_product": {"data": data}}
-        # Save images
-        # Note: We need to provide On-time data for Replicator to save the images.
-        rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
-        rep_writer.write(rep_output)
+        # # Pack data back into replicator format to save them using its writer
+        # rep_output = {"annotators": {}}
+        # for key, data, info in zip(single_cam_data.keys(), single_cam_data.values(), single_cam_info.values()):
+        #     if info is not None:
+        #         rep_output["annotators"][key] = {"render_product": {"data": data, **info}}
+        #     else:
+        #         rep_output["annotators"][key] = {"render_product": {"data": data}}
+        # # Save images
+        # # Note: We need to provide On-time data for Replicator to save the images.
+        # rep_output["trigger_outputs"] = {"on_time": camera.frame[camera_index]}
+        # rep_writer.write(rep_output)
 
         # Extract the image data (assuming 'rgb' is the key)
         image_data = single_cam_data.get('rgb')
+
+        folder_dir = f"./isaac_ws/src/output/camera/simulation_{sim_num}"
+        os.makedirs(folder_dir, exist_ok=True)
         
         if image_data is not None:
             image_data = image_data.astype(np.uint8)
-            pil_image = Image.fromarray(image_data)
-            image_array = np.array(pil_image)
-            return image_array
+            high_res_image = Image.fromarray(image_data)
+
+            low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            file_name = f"{camera_type}_{timestamp}.png"
+            file_path = os.path.join(folder_dir, file_name)
+
+            # Save image as RGB PNG
+            low_res_image.save(file_path)
+
+
+                
+            return np.array(low_res_image)
 
     return None 
 
@@ -776,6 +793,26 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     np.save(filepath, episode_steps, allow_pickle=True)
     print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
 
+def update_save_every_iterations(state):
+    if state == PickSmState.APPROACH_ABOVE_OBJECT: 
+        return 10
+    elif state == PickSmState.APPROACH_OBJECT:
+        return 10
+    elif state == PickSmState.GRASP_OBJECT:
+        return 10
+    elif state == PickSmState.LIFT_OBJECT:
+        return 10
+    elif state == PickSmState.PLACE_ON_GOAL:
+        return 3
+    elif state == PickSmState.PLACE_BELOW_GOAL:
+        return 10
+    elif state == PickSmState.RELEASE_OBJECT:
+        return 10
+    elif state == PickSmState.RETURN_HOME:
+        return 10
+    else:
+        return 10
+
 def run_simulator(env, env_cfg, args_cli):
     camera = env.unwrapped.scene["camera"]
     wrist_camera = env.unwrapped.scene["wrist_camera"]
@@ -836,11 +873,13 @@ def run_simulator(env, env_cfg, args_cli):
 
 
 
+        SAVE_EVERY_ITERATIONS = update_save_every_iterations(pick_sm.sm_state[0].item())
+
 
 
         if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
-            table_image_array = take_image(camera_index, camera, rep_writer)
-            wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
+            table_image_array = take_image(camera_index, camera, rep_writer, camera_type="table", sim_num=task_count-1)
+            wrist_image_array = take_image(camera_index, wrist_camera, rep_writer, camera_type="wrist", sim_num=task_count-1)
             # if count >= 10: # NOTE added ric to avoi saving too many images locally
             #     if os.path.exists("./isaac_ws/src/output/camera"):
             #         shutil.rmtree("./isaac_ws/src/output/camera")
