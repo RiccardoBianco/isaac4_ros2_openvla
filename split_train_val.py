@@ -28,6 +28,11 @@ def split_dataset(input_dir, output_dir, train_ratio=0.8):
     all_files = sorted(os.listdir(input_dir))
     all_files = [f for f in all_files if os.path.isfile(os.path.join(input_dir, f))]
 
+    # Check if input is empty
+    if not all_files:
+        print(f"⚠️  Input directory '{input_dir}' is empty. Aborting split to avoid deleting output data.")
+        return
+
     total_files = len(all_files)
     train_count = math.floor(total_files * train_ratio)
 
