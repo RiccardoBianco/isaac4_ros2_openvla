@@ -37,7 +37,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         # ? F: DO WE NEED THIS? WE MIGHT ACTUALLY PROVIDE MORE INFORMATION AT TRAINING TIME
                         # ? AND THEN AT TEST TIME ONLY USE IMAGE + PROMPT
                         'wrist_image': tfds.features.Image(
-                            shape=(512, 512, 3),
+                            shape=(256, 256, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Wrist camera RGB observation.',
