@@ -1,102 +1,117 @@
+# TODO cambiare oggetto -> deve essere un rigid body altrimenti non funziona
 """
-    # Usage
-    connect to the computer in the lab through ssh
+Script to run an environment with a pick and lift state machine.
 
-    # Move to the right directory and activate the conda environment
-    cd ~/Desktop/PLRItalians/isaac4_ros2_openvla
-    conda activate env_isaaclab
+The state machine is implemented in the kernel function `infer_state_machine`.
+It uses the `warp` library to run the state machine in parallel on the GPU.
 
-    # run the script
-    ~/IsaacLab/isaaclab.sh -p isaac_ws/src/isaac_data_collection.py --enable_cameras --save --headless
+.. code-block:: bash
+
+    ./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/isaac_data_collection.py --enable_cameras --save
+
 """
 
-# Scipy -> quaternion -> scalar last order [x, y, z, w]
-# Iaaclab -> quaternion -> scalar first order [w, x, y, z]
+"""Launch Omniverse Toolkit first."""
 
-OPENVLA_INSTRUCTION = "Pick up the red box" # TODO CAMI - task instruction
-OPENVLA_UNNORM_KEY = "bridge_orig"
-MAX_GRIPPER_POSE = 1.0 
-VISUALIZE_MARKERS = True
+PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
+OPENVLA_INSTRUCTION = "Pick and place the object in the red goal pose. \n"
+
+RANDOM_CAMERA = False
+
+SAVE_EVERY_ITERATIONS = 10
+SAVE = True
+
+CAMERA_HEIGHT = 512
+CAMERA_WIDTH = 512
+CAMERA_POSITION = [0.9, -0.4, 0.6]
+OLD_CAMERA_POSITION = [1.2, -0.2, 0.8]
+CAMERA_TARGET = [0.3, 0.0, -0.2]
+OLD_CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+INIT_OBJECT_POS = [0.5, 0, 0.055]
+
+# ^ Change this to the desired camera position and target
+CAMERA_POSITION = OLD_CAMERA_POSITION
+CAMERA_TARGET = OLD_CAMERA_TARGET
 
 import argparse
+
 from isaaclab.app import AppLauncher
 
 # add argparse arguments
-parser = argparse.ArgumentParser(description="Tutorial on using the differential IK controller.")
-parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
-parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to spawn.")
-parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
-# parser.add_argument("--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA).")
-parser.add_argument("--save", action="store_true", default=False, help="Save the data from camera at index specified by ``--camera_id``.",)
+parser = argparse.ArgumentParser(description="Pick and lift state machine for lift environments.")
+parser.add_argument(
+    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
+)
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--camera_id", type=int, choices={0, 1}, default=0, help=("The camera ID to use for displaying points or saving the camera data. Default is 0." " The viewport will always initialize with the perspective of camera 0."),)
+parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
+parser.add_argument("--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA).")
+parser.add_argument("--save", action="store_true", default=False, help="Save the data from camera at index specified by ``--camera_id``.",)
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli = parser.parse_args()
+
 # launch omniverse app
-app_launcher = AppLauncher(args_cli)
+app_launcher = AppLauncher(headless=args_cli.headless, enable_cameras=args_cli.enable_cameras)
 simulation_app = app_launcher.app
 
+"""Rest everything else."""
 
-
+import gymnasium as gym
 import torch
-import os
-import numpy as np
-from scipy.spatial.transform import Rotation
+from collections.abc import Sequence
 from PIL import Image
-import json_numpy
-import yaml
-import requests
+
+import warp as wp
+import numpy as np
+import os
+import shutil
 
 
-import isaaclab.sim as sim_utils
-from isaaclab.assets import AssetBaseCfg
-from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.markers import VisualizationMarkers
-from isaaclab.markers.config import FRAME_MARKER_CFG
-from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
+from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
+
+
+from isaaclab.assets import RigidObjectCfg, AssetBaseCfg
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.math import subtract_frame_transforms
-from isaaclab.utils import convert_dict_to_backend
+
+import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.manager_based.manipulation.lift import mdp
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
+import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
-from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
+from isaaclab.utils.math import subtract_frame_transforms
+##
+# Pre-defined configs
+##
+
+from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
+import omni.usd
 from isaaclab.sensors.camera import CameraCfg
-import time
-import sys
-import signal
-import json
-
-SAVE_DATASET_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "plr_openvla_dataset")
-
-def save_step_npz(image_array, joint_angles, ee_pose, camera_pose, instruction, step_id):
-    """
-    Save a step of the simulation to a .npz file
-    # TODO NEED TO FINISH THE FUNCTION
-    """
-    os.makedirs(SAVE_DATASET_DIR, exist_ok=True)
-    save_dict = {
-        """
-        "observation/image_primary": image_array.astype(np.uint8),
-        "observation/proprio": joint_angles.astype(np.float32),  # shape: (7,)
-        "observation/camera_pose": camera_pose.astype(np.float32),  # shape: (7,)
-        "action": ee_pose.astype(np.float32),  # shape: (7,)
-        "task/language_instruction": instruction,
-        "dataset_name": "plr_openvla_finetuning_dataset",
-        """
-        "image": image_array.astype(np.uint8),
-        "wrist_image": image_array.astype(np.uint8), # TODO this has to be changes, take the respective Wrist Image and convert it
-        "state": joint_angles.astype(np.float32),  # shape: (9,) # TODO the state should also contain the Gripper State shape: (2,)
-        "action": ee_pose.astype(np.float32),  # shape: (9,) # TODO the action should also contain the Gripper Action shape: (2,)
-        "language_instruction": instruction,
-    }
-    np.savez_compressed(os.path.join(SAVE_DATASET_DIR, f"step_{step_id:06d}.npz"), **save_dict)
+from isaaclab.utils import convert_dict_to_backend
 
 
-# Apply patch for handling numpy arrays in JSON
-json_numpy.patch()
+
+from pxr import UsdGeom, Usd, UsdShade
+# initialize warp
+wp.init()
+
+
+from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
+from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
+from isaaclab.sim.spawners import UsdFileCfg
+
+##
+# Pre-defined configs
+##
+from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
 
 
 def scalar_first_to_last(q):
@@ -108,38 +123,562 @@ def scalar_last_to_first(q):
     x, y, z, w = q
     return [w, x, y, z]
 
+import numpy as np
+from scipy.spatial.transform import Rotation
 
-def apply_delta(position, orientation, delta):
+# def compute_delta(ee_pose, next_ee_pose, gripper_state):
+#     # Decomponi le pose
+#     pos1, quat1 = ee_pose[:3], ee_pose[3:]
+#     pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:]
+
+#     # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
+#     rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
+#     rot2 = Rotation.from_quat(scalar_first_to_last(quat2))
+
+#     # Calcola la traslazione nel world frame
+#     delta_pos_world = pos2 - pos1
+
+#     # Riporta la traslazione nel frame dell'EE
+#     delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+#     # Calcola rotazione relativa: R_delta = R1^-1 * R2
+#     delta_rot = rot1.inv() * rot2
+
+#     # Estrai rotazione relativa in Euler angles
+#     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
+
+#     # Combina in unico array
+#     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
+#     return delta
+def compute_delta(ee_pose, next_ee_pose):
+    # Decomponi le pose
+    # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
+    # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
+
+    pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+    pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
+
+    # Rotazioni come oggetti Rotation
+    rot1 = Rotation.from_euler('xyz', rpy1)
+    rot2 = Rotation.from_euler('xyz', rpy2)
+
+    # Calcola la traslazione nel world frame
+    delta_pos_world = pos2 - pos1
+
+    # Riporta la traslazione nel frame dell'EE
+    delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+    # Calcola rotazione relativa: R_delta = R1^-1 * R2
+    delta_rot = rot1.inv() * rot2
+
+    # Estrai rotazione relativa in Euler angles
+    delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
+
+    next_gripper = np.atleast_1d(grip2)
+
+
+    # Combina il delta finale
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
+
+    return delta
+
+
+
+
+
+@configclass
+class FrankaCubeLiftEnvCfg(LiftEnvCfg):
+    def __post_init__(self):
+        # post init of parent
+        super().__post_init__()
+
+        # Set Franka as robot
+        # We switch here to a stiffer PD controller for IK tracking to be better.
+        self.scene.robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        # Set actions for the specific robot type (franka)
+        self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+            asset_name="robot",
+            joint_names=["panda_joint.*"],
+            body_name="panda_hand",
+            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
+            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+        )
+
+        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["panda_finger.*"],
+            open_command_expr={"panda_finger_.*": 0.04},
+            close_command_expr={"panda_finger_.*": 0.0},
+        )
+
+                # Set the body name for the end effector
+        self.commands.object_pose.body_name = "panda_hand"
+
+
+        self.scene.plane = AssetBaseCfg(
+            prim_path="/World/defaultGroundPlane",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+        )
+
+        self.scene.table = AssetBaseCfg(
+            prim_path="/World/Table",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+        )
+        self.scene.light = AssetBaseCfg(
+            prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
+        )
+
+
+        # # TODO understand how to set the object different from this cube
+        # self.scene.object = RigidObjectCfg(
+        #     prim_path="{ENV_REGEX_NS}/Object",
+        #     init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
+        #     spawn=UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+        #         scale=(0.8, 0.8, 0.8),
+        #         rigid_props=RigidBodyPropertiesCfg(
+        #             solver_position_iteration_count=16,
+        #             solver_velocity_iteration_count=1,
+        #             max_angular_velocity=1000.0,
+        #             max_linear_velocity=1000.0,
+        #             max_depenetration_velocity=5.0,
+        #             disable_gravity=False,
+        #         ),
+        #     ),
+        # )
+
+        # self.scene.box = AssetBaseCfg(
+        #     prim_path="/World/CrakerBox",
+        #     spawn=sim_utils.UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", scale=(1.0, 1.0, 1.0)
+        #     ),
+        #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
     
-    position = position.squeeze(0)
-    orientation = orientation.squeeze(0)
+        # self.scene.box = RigidObjectCfg(
+        #     prim_path="/World/Box",
+        #     spawn=UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd", # TODO check if rigid body props are needed
+        #         scale=(1.0, 1.0, 0.2),
+        #         rigid_props=RigidBodyPropertiesCfg(),  # default va bene per ora
+        #     ),
+        #     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
+
+        # self.scene.box = AssetBaseCfg(
+        #     prim_path="/World/Box",
+        #     spawn=sim_utils.UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.1, 0.1, 0.01)
+        #     ),
+        #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
+        # )
+        if PICK_AND_PLACE:
+            self.scene.box = RigidObjectCfg(
+                prim_path="/World/Box",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
+        
+
+        self.scene.object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
 
 
-    R = Rotation.from_quat(scalar_first_to_last(orientation)).as_matrix()
-
-    # Compute delta in the world frame
-    world_delta = R @ np.array(delta[:3])
-    new_position = position + world_delta
 
 
-    # Apply rotation delta (Euler angles)
-    r_x = Rotation.from_euler('x', delta[3])
-    r_y = Rotation.from_euler('y', delta[4])
-    r_z = Rotation.from_euler('z', delta[5])
+                # Listens to the required transforms
+        marker_cfg = FRAME_MARKER_CFG.copy()
+        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_cfg.prim_path = "/Visuals/FrameTransformer"
+        self.scene.ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
+            debug_vis=False,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
+                    name="end_effector",
+                    offset=OffsetCfg(
+                        pos=[0.0, 0.0, 0.1034],
+                    ),
+                ),
+            ],
+        )
 
-    # Apply the rotation to the current orientation
-    delta_rot = r_x * r_y * r_z # first apply x, then y, then z
-    # delta_rot = r_z* r_y * r_x # first apply z, then y, then x
+
+        self.scene.camera = CameraCfg(
+            prim_path="/World/CameraSensor",
+            update_period=0,
+            height=CAMERA_HEIGHT,
+            width=CAMERA_WIDTH,
+            data_types=[
+                "rgb",
+            ],
+            colorize_semantic_segmentation=True,
+            colorize_instance_id_segmentation=True,
+            colorize_instance_segmentation=True,
+            spawn=sim_utils.PinholeCameraCfg(
+                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                focal_length=24.0,         # Wider view
+                focus_distance=400.0,     # Farther focus (everything is sharp)
+                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+            ),
+        )
+
+        self.scene.wrist_camera = CameraCfg(
+            prim_path="/World/envs/env_0/Robot/panda_hand/WristCameraSensor",
+            update_period=0,
+            height=CAMERA_HEIGHT,
+            width=CAMERA_WIDTH,
+            data_types=[
+                "rgb",
+            ],
+            colorize_semantic_segmentation=True,
+            colorize_instance_id_segmentation=True,
+            colorize_instance_segmentation=True,
+            spawn=sim_utils.PinholeCameraCfg(
+                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                focal_length=24.0,         # Wider view
+                focus_distance=400.0,     # Farther focus (everything is sharp)
+                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+            ),
+             offset=CameraCfg.OffsetCfg(pos=(0.05, 0.0, 0.0), rot=(0.707, 0.0, 0.0, 0.707), convention="ros"),
+        )
 
 
-    new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
-    new_orientation = scalar_last_to_first(new_orientation) # Needed for isaac sim
+class GripperState:
+    """States for the gripper."""
 
-    new_pose = np.concatenate([new_position, new_orientation])  # shape (7,)
-    return new_pose
+    OPEN = wp.constant(1.0)
+    CLOSE = wp.constant(-1.0)
 
+
+class PickSmState:
+    """States for the pick state machine."""
+
+    REST = wp.constant(0)
+    APPROACH_ABOVE_OBJECT = wp.constant(1)
+    APPROACH_OBJECT = wp.constant(2)
+    GRASP_OBJECT = wp.constant(3)
+    LIFT_OBJECT = wp.constant(4)
+
+
+    PLACE_ON_GOAL = wp.constant(5)
+    PLACE_BELOW_GOAL = wp.constant(6)
+    RELEASE_OBJECT = wp.constant(7)
+    RETURN_HOME = wp.constant(8)
+
+
+class PickSmWaitTime:
+    """Additional wait times (in s) for states for before switching."""
+
+    REST = wp.constant(1.5)
+    APPROACH_ABOVE_OBJECT = wp.constant(0.5)
+    APPROACH_OBJECT = wp.constant(0.6)
+    GRASP_OBJECT = wp.constant(0.3)
+    LIFT_OBJECT = wp.constant(0.5)
+
+    PLACE_ON_GOAL = wp.constant(0.4)
+    PLACE_BELOW_GOAL = wp.constant(0.4)
+    RELEASE_OBJECT = wp.constant(0.4)
+    RETURN_HOME = wp.constant(0.5)
+
+
+@wp.func
+def distance_below_threshold(current_pos: wp.vec3, desired_pos: wp.vec3, threshold: float) -> bool:
+    return wp.length(current_pos - desired_pos) < threshold
+
+
+@wp.kernel
+def infer_state_machine(
+    dt: wp.array(dtype=float),
+    sm_state: wp.array(dtype=int),
+    sm_wait_time: wp.array(dtype=float),
+    ee_pose: wp.array(dtype=wp.transform),
+    object_pose: wp.array(dtype=wp.transform),
+    des_object_pose: wp.array(dtype=wp.transform),
+    above_object_pose: wp.array(dtype=wp.transform),
+    below_goal_pose: wp.array(dtype=wp.transform),
+    des_ee_pose: wp.array(dtype=wp.transform),
+    gripper_state: wp.array(dtype=float),
+    offset: wp.array(dtype=wp.transform),
+    position_threshold: float,
+):
+    # retrieve thread id
+    tid = wp.tid()
+    # retrieve state machine state
+    state = sm_state[tid]
+    # decide next state
+    if state == PickSmState.REST:
+        des_ee_pose[tid] = ee_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.REST:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.APPROACH_ABOVE_OBJECT
+            sm_wait_time[tid] = 0.0
+    elif state == PickSmState.APPROACH_ABOVE_OBJECT:
+        des_ee_pose[tid] = wp.transform_multiply(offset[tid], object_pose[tid])
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.APPROACH_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.APPROACH_OBJECT:
+        des_ee_pose[tid] = object_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.GRASP_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.GRASP_OBJECT:
+        des_ee_pose[tid] = object_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.GRASP_OBJECT:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.PLACE_ON_GOAL # TODO: LIFT_OBJECT if we want to lift first
+            sm_wait_time[tid] = 0.0
+    # elif state == PickSmState.LIFT_OBJECT:
+    #     des_ee_pose[tid] = above_object_pose[tid]
+    #     gripper_state[tid] = GripperState.CLOSE
+    #     if distance_below_threshold(
+    #         wp.transform_get_translation(ee_pose[tid]),
+    #         wp.transform_get_translation(des_ee_pose[tid]),
+    #         position_threshold,
+    #     ):
+    #         # wait for a while
+    #         if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT:
+    #             # move to next state and reset wait time
+    #             sm_state[tid] = PickSmState.PLACE_ABOVE_GOAL
+    #             sm_wait_time[tid] = 0.0
+    elif state == PickSmState.PLACE_ON_GOAL:
+        des_ee_pose[tid] = des_object_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.PLACE_ON_GOAL:
+                # move to next state and reset wait time
+                if PICK_AND_PLACE:
+                    sm_state[tid] = PickSmState.PLACE_BELOW_GOAL
+                else:
+                    sm_state[tid] = PickSmState.PLACE_ON_GOAL
+                sm_wait_time[tid] = 0.0
+                
+    elif state == PickSmState.PLACE_BELOW_GOAL and PICK_AND_PLACE:
+        des_ee_pose[tid] = below_goal_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.PLACE_BELOW_GOAL:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.RELEASE_OBJECT
+                sm_wait_time[tid] = 0.0
+    elif state == PickSmState.RELEASE_OBJECT and PICK_AND_PLACE:
+        des_ee_pose[tid] = below_goal_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        # wait for a while
+        if sm_wait_time[tid] >= PickSmWaitTime.RELEASE_OBJECT:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.RETURN_HOME
+            sm_wait_time[tid] = 0.0
+    elif state == PickSmState.RETURN_HOME and PICK_AND_PLACE:
+        des_ee_pose[tid] = des_object_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        if distance_below_threshold(
+            wp.transform_get_translation(ee_pose[tid]),
+            wp.transform_get_translation(des_ee_pose[tid]),
+            position_threshold,
+        ):
+            # wait for a while
+            if sm_wait_time[tid] >= PickSmWaitTime.RETURN_HOME:
+                # move to next state and reset wait time
+                sm_state[tid] = PickSmState.RETURN_HOME
+                sm_wait_time[tid] = 0.0
+
+
+
+    # increment wait time
+    sm_wait_time[tid] = sm_wait_time[tid] + dt[tid]
+
+
+class PickAndLiftSm:
+    """A simple state machine in a robot's task space to pick and lift an object.
+
+    The state machine is implemented as a warp kernel. It takes in the current state of
+    the robot's end-effector and the object, and outputs the desired state of the robot's
+    end-effector and the gripper. The state machine is implemented as a finite state
+    machine with the following states:
+
+    1. REST: The robot is at rest.
+    2. APPROACH_ABOVE_OBJECT: The robot moves above the object.
+    3. APPROACH_OBJECT: The robot moves to the object.
+    4. GRASP_OBJECT: The robot grasps the object.
+    5. LIFT_OBJECT: The robot lifts the object to the desired pose. This is the final state.
+    """
+
+    def __init__(self, dt: float, num_envs: int, device: torch.device | str = "cpu", position_threshold=0.01):
+        """Initialize the state machine.
+
+        Args:
+            dt: The environment time step.
+            num_envs: The number of environments to simulate.
+            device: The device to run the state machine on.
+        """
+        # save parameters
+        self.dt = float(dt)
+        self.num_envs = num_envs
+        self.device = device
+        self.position_threshold = position_threshold
+        # initialize state machine
+        self.sm_dt = torch.full((self.num_envs,), self.dt, device=self.device)
+        self.sm_state = torch.full((self.num_envs,), 0, dtype=torch.int32, device=self.device)
+        self.sm_wait_time = torch.zeros((self.num_envs,), device=self.device)
+
+        # desired state
+        self.des_ee_pose = torch.zeros((self.num_envs, 7), device=self.device)
+        self.des_gripper_state = torch.full((self.num_envs,), 0.0, device=self.device)
+
+        # approach above object offset
+        self.offset = torch.zeros((self.num_envs, 7), device=self.device)
+        self.offset[:, 2] = 0.1
+        self.offset[:, -1] = 1.0  # warp expects quaternion as (x, y, z, w)
+
+        # convert to warp
+        self.sm_dt_wp = wp.from_torch(self.sm_dt, wp.float32)
+        self.sm_state_wp = wp.from_torch(self.sm_state, wp.int32)
+        self.sm_wait_time_wp = wp.from_torch(self.sm_wait_time, wp.float32)
+        self.des_ee_pose_wp = wp.from_torch(self.des_ee_pose, wp.transform)
+        self.des_gripper_state_wp = wp.from_torch(self.des_gripper_state, wp.float32)
+        self.offset_wp = wp.from_torch(self.offset, wp.transform)
+
+    def reset_idx(self, env_ids: Sequence[int] = None):
+        """Reset the state machine."""
+        if env_ids is None:
+            env_ids = slice(None)
+        self.sm_state[env_ids] = 0
+        self.sm_wait_time[env_ids] = 0.0
+
+    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor, above_object_pose: torch.Tensor, below_goal_pose: torch.Tensor) -> torch.Tensor:
+        """Compute the desired state of the robot's end-effector and the gripper."""
+        # convert all transformations from (w, x, y, z) to (x, y, z, w)
+        ee_pose = ee_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        object_pose = object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        des_object_pose = des_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        above_object_pose = above_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        below_goal_pose = below_goal_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+
+        # convert to warp
+        ee_pose_wp = wp.from_torch(ee_pose.contiguous(), wp.transform)
+        object_pose_wp = wp.from_torch(object_pose.contiguous(), wp.transform)
+        des_object_pose_wp = wp.from_torch(des_object_pose.contiguous(), wp.transform)
+        above_object_pose_wp = wp.from_torch(above_object_pose.contiguous(), wp.transform)
+        below_goal_pose_wp = wp.from_torch(below_goal_pose.contiguous(), wp.transform)
+
+        # run state machine
+        wp.launch(
+            kernel=infer_state_machine,
+            dim=self.num_envs,
+            inputs=[
+                self.sm_dt_wp,
+                self.sm_state_wp,
+                self.sm_wait_time_wp,
+                ee_pose_wp,
+                object_pose_wp,
+                des_object_pose_wp,
+                above_object_pose_wp,
+                below_goal_pose_wp,
+                self.des_ee_pose_wp,
+                self.des_gripper_state_wp,
+                self.offset_wp,
+                self.position_threshold,
+
+            ],
+            device=self.device,
+        )
+
+        # convert transformations back to (w, x, y, z)
+        des_ee_pose = self.des_ee_pose[:, [0, 1, 2, 6, 3, 4, 5]]
+        # convert to torch
+        return torch.cat([des_ee_pose, self.des_gripper_state.unsqueeze(-1)], dim=-1)
+
+def assign_material(object_path, material_path):
+    stage = omni.usd.get_context().get_stage()
+
+    # Prendi la primitiva della tabella
+    object_prim = stage.GetPrimAtPath(object_path)
+    
+    # Prendi il materiale esistente
+    material_prim = stage.GetPrimAtPath(material_path)
+
+    if object_prim and material_prim:
+        material = UsdShade.Material(material_prim)
+        UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+        print("Materiale assegnato correttamente a ", object_path)
+    else:
+        print("Errore: Primitiva o materiale non trovati.")
 
 def take_image(camera_index, camera, rep_writer):
+    """
+    Take an image from the camera and save it using the replicator writer.
+    Args:
+        camera_index: Index of the camera to use.
+        camera: The camera object.
+        rep_writer: The replicator writer object.
+    """
     if args_cli.save:
         # Save images from camera at camera_index
         # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
@@ -173,314 +712,322 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
+def get_current_state(robot):
+    joint_pos = robot.data.joint_pos.clone()
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
+    root_pose_w = robot.data.root_state_w[:, 0:7]
 
-@configclass
-class TableTopSceneCfg(InteractiveSceneCfg):
-    """Configuration for a cart-pole scene."""
-
-    ground = AssetBaseCfg(
-        prim_path="/World/defaultGroundPlane",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+    # posizione dell'end-effector relativa al root
+    ee_pos_b, ee_quat_b = subtract_frame_transforms(
+        root_pose_w[:, 0:3], root_pose_w[:, 3:7],
+        ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
+    # print("joint_pos: ", joint_pos)
+    # print("joint_pose shape: ", joint_pos.shape)
+    gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
+    # print("gripper_state: ", gripper_state.shape)
+    # print("gripper_state: ", gripper_state)
+    quat_np = scalar_first_to_last(ee_quat_b[0].cpu().numpy())  # shape (4,)
+    R_xyz_np = Rotation.from_quat(quat_np).as_euler('xyz') # shape (3,)
+    R_xyz = torch.tensor(R_xyz_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
+    pad = torch.tensor([[0.0]], device=ee_pos_b.device)
+    current_state = torch.cat([ee_pos_b, R_xyz, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
+    #current_state = torch.cat([ee_pos_b, R_xyz, gripper_state], dim=-1) # shape: (1, 7)
+    return current_state
+                
 
-    # lights
-    dome_light = AssetBaseCfg(
-        prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
-    )
-
-    # # # mount
-    table = AssetBaseCfg(
-        prim_path="/World/Table",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
-
-    )
-
-    cube = AssetBaseCfg(
-        prim_path="/World/Cube",
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Shapes/cube.usd", scale=(0.05, 0.1, 0.05)
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
-    )
-
-    camera = CameraCfg(
-        prim_path="/World/CameraSensor",
-        update_period=0,
-        height=1080,
-        width=1920,
-        data_types=[
-            "rgb",
-        ],
-        colorize_semantic_segmentation=True,
-        colorize_instance_id_segmentation=True,
-        colorize_instance_segmentation=True,
-        spawn=sim_utils.PinholeCameraCfg(
-            #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-            focal_length=24.0,         # Wider view
-            focus_distance=400.0,     # Farther focus (everything is sharp)
-            horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
-        ),
-    )
-
-    # articulation
-    if args_cli.robot == "franka_panda":
-        robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="/World/Robot")
-    elif args_cli.robot == "ur10":
-        robot = UR10_CFG.replace(prim_path="/World/Robot")
-    else:
-        raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
-
-
-
-def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
-    """Runs the simulation loop."""
-    # Extract scene entities
-    # note: we only do this here for readability.
-    robot = scene["robot"]
+def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"):
+    """
+    Save a list of timestep dictionaries into a progressively numbered .npy file.
     
-    #######################
-    # CAMERA STUFF - Start
-    #######################
+    Args:
+        episode_steps (List[dict]): Each step must include keys like "state", "action", "image", etc.
+        save_dir (str): Directory where .npy episodes are stored.
+    """
+    # folder_name = "episodes"
+    # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
+    for i in range(len(episode_steps)-1):
+        episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
+        # print("Step: ", i)
+        # print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
+        # print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
+    
+    episode_steps[-1]["action"] = compute_delta(episode_steps[-1]["state"], episode_steps[-1]["state"])
 
-    # Get the camera
-    camera = scene["camera"]
+    os.makedirs(save_dir, exist_ok=True)
 
-    # Create replicator writer
-    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")
+    # Get next available episode number
+    existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
+    episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
+    next_num = max(episode_nums) + 1 if episode_nums else 0
+    if next_num > 4500: #  Around ~30Gb -> ~28.8Gb --> becomes ~10Gb after rlds dataset conversion
+        simulation_app.close()
+        print("Maximum number of episodes reached. Exiting...")
+        exit(0)
+
+    filename = f"episode_{next_num:03d}.npy"
+    filepath = os.path.join(save_dir, filename)
+
+    # Save
+    np.save(filepath, episode_steps, allow_pickle=True)
+    print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
+
+def run_simulator(env, env_cfg, args_cli):
+    camera = env.unwrapped.scene["camera"]
+    wrist_camera = env.unwrapped.scene["wrist_camera"]
+
+    robot = env.unwrapped.scene["robot"]
+
+    print("\n\nRUNNING SIMULATOR!\n\n")
+
+    # ^ Temporary data structure for saving ["state", "action", "image", "wrist_image", "language_instruction"] for each step
+    episode_data = []
+
     rep_writer = rep.BasicWriter(
-        output_dir=output_dir,
+        output_dir=os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera"), # don't save the first sim
         frame_padding=0,
         colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
         colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
         colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
     )
 
-    # Camera positions, targets, orientations
-    camera_positions = torch.tensor([[1.2, -0.2, 0.8]], device=sim.device)
-    camera_targets = torch.tensor([[0.0, 0.0, -0.3]], device=sim.device)
-    # These orientations are in ROS-convention, and will position the cameras to view the origin
+    # Set the camera position and target (wrist camera is already attached to the robot in the config)
+    camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
+    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+    camera_pose_to_save = torch.cat((camera_positions, camera_targets), dim=-1) # (1, 6)
+    print("Camera Pose shape: ", camera_pose_to_save.shape)
+    
     camera.set_world_poses_from_view(camera_positions, camera_targets)
-    # Index of the camera to use for visualization and saving
     camera_index = args_cli.camera_id
 
-    ###################
-    # CAMERA STUFF - End
-    ###################
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
+    actions[:, 3] = 1.0
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((env.unwrapped.num_envs, 4), device=env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
 
-    # Create controller
-    diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
-    diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
+    # create state machine
+    pick_sm = PickAndLiftSm(
+        env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.num_envs, env.unwrapped.device, position_threshold=0.01
+    )
 
-    # Markers
+    assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
 
-    if VISUALIZE_MARKERS:
-        frame_marker_cfg = FRAME_MARKER_CFG.copy()
-        frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-        ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
-        goal_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_goal"))
-
-
-    ee_goal_deltas = [
-        [0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # 10 cm x
-        [0.0, 0.1, 0.0, 0.0, 0.0, 0.0],  # 10 cm y
-        [0.0, 0.0, 0.1, 0.0, 0.0, 0.0],  # 10 cm z
-        [-0.1, 0.0, 0.0, 0.0, 0.0, 0.0],  # -10 cm x
-        [0.0, -0.1, 0.0, 0.0, 0.0, 0.0],  # -10 cm y
-        [0.0, 0.0, -0.1, 0.0, 0.0, 0.0],  # -10 cm z
-    ]
-
-    ee_goal_deltas = torch.tensor(ee_goal_deltas, device=sim.device)
-    # Track the given command
-    current_goal_idx = 0
-    # Create buffers to store actions
-    ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
-    ik_commands[:] = torch.tensor([0.5, 0.0, 0.4, 0, 1, 0, 0], device=sim.device) # TODO check if necessary
-
-    # Specify robot-specific parameters
-    if args_cli.robot == "franka_panda":
-        robot_entity_cfg = SceneEntityCfg("robot", joint_names=["panda_joint.*"], body_names=["panda_hand"])
-    elif args_cli.robot == "ur10":
-        robot_entity_cfg = SceneEntityCfg("robot", joint_names=[".*"], body_names=["ee_link"])
-    else:
-        raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
-    # Resolving the scene entities
-    robot_entity_cfg.resolve(scene)
-    # Obtain the frame index of the end-effector
-    # For a fixed base robot, the frame index is one less than the body index. This is because
-    # the root body is not included in the returned Jacobians.
-    if robot.is_fixed_base:
-        ee_jacobi_idx = robot_entity_cfg.body_ids[0] - 1
-    else:
-        ee_jacobi_idx = robot_entity_cfg.body_ids[0]
-
-    # Define simulation stepping
-    sim_dt = sim.get_physics_dt()
     count = 0
-    # Simulation loop
-
-    
-    goal_reached = True
+    task_count = 0
+    restarted = True
 
     while simulation_app.is_running():
 
-        if count == 0:
+        # if pick_sm.sm_state[0].item() == PickSmState.REST:
+        #     joint_pos = robot.data.joint_pos.clone()
+        #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+        #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+        #     tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+        #     tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
 
-            # Initialization - move to home position
-            joint_pos = robot.data.default_joint_pos.clone()
-            joint_vel = robot.data.default_joint_vel.clone()
-            robot.write_joint_state_to_sim(joint_pos, joint_vel)
-            robot.reset()
-
-            diff_ik_controller.reset()
-            diff_ik_controller.set_command(ik_commands)
-            # set gripper position
-            gripper_pos_des = torch.tensor([[1.0, 1.0]], device=sim.device)
+        #     print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+        #     print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
 
 
-        if goal_reached and count != 0:
 
 
-            # take image
-            image_array = take_image(camera_index, camera, rep_writer)
-            #  - image_array -> image from camera
-             
 
-            print(f"✅ Nuovo goal: {current_goal_idx}")
-            delta = ee_goal_deltas[current_goal_idx]
-            ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
-            ee_goal = torch.tensor(ee_goal, device=sim.device).unsqueeze(0)
-            ik_commands[:] = ee_goal
-            joint_pos_des = joint_pos[:, robot_entity_cfg.joint_ids].clone()
-            diff_ik_controller.reset()
-            diff_ik_controller.set_command(ik_commands)
-            goal_reached = False
+        if count % SAVE_EVERY_ITERATIONS == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
+            table_image_array = take_image(camera_index, camera, rep_writer)
+            wrist_image_array = take_image(camera_index, wrist_camera, rep_writer)
+            # if count >= 10: # NOTE added ric to avoi saving too many images locally
+            #     if os.path.exists("./isaac_ws/src/output/camera"):
+            #         shutil.rmtree("./isaac_ws/src/output/camera")
+            #     os.mkdir("./isaac_ws/src/output/camera", exist_ok=True)
+
             
-            current_goal_idx = (current_goal_idx + 1) % len(ee_goal_deltas)
+            # joint_vel = robot.data.joint_vel.clone()
+
+            # print("Joint Position: ", joint_pos)
+            # print("Joint Velocity: ", joint_vel)
+            if SAVE:
+                current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
+                
+                step_data = {
+                    "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (8,)
+                    "image": table_image_array.astype(np.uint8),
+                    "wrist_image": wrist_image_array.astype(np.uint8),
+                    "language_instruction": OPENVLA_INSTRUCTION,
+                    "object_pose": object_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                    "goal_pose": goal_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                    "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                }
+
+                # Add step to episode_data
+                episode_data.append(step_data)
+
+        # run everything in inference mode
+        with torch.inference_mode():
+            # step environment
             
-        print("Robot entity cfg: ", robot_entity_cfg.body_ids)
-        print("Robot entity cfg 0: ", robot_entity_cfg.body_ids[0])
+
+            # observations
+            # -- end-effector frame
+            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+            # -- object frame
+            object_data: RigidObjectData = env.unwrapped.scene["object"].data
+            object_pose_to_save = object_data.root_state_w[:, 0:7].clone()
+            # print("OBJECT POSE: ", object_pose_to_save)
+            goal_pose_to_save = env.unwrapped.command_manager.get_command("object_pose")[..., :7].clone()
+            # print("GOAL POSE: ", goal_pose_to_save)
+
+
+            object_position = object_data.root_pos_w - env.unwrapped.scene.env_origins
+            # -- target object frame
+            desired_position = env.unwrapped.command_manager.get_command("object_pose")[..., :3]
+
+            if restarted == True:
+                above_object_position = object_position.clone()
+                above_object_position[:, 2] += 0.1  # 10 cm sopra oggetto
+
+                below_goal_position = desired_position.clone()
+                below_goal_position[:, 2] -= 0.18  # 10 cm sopra goal (dato che goal è già a +20 cm)
+                restarted = False
+
+            # advance state machine
+            actions = pick_sm.compute(
+                torch.cat([tcp_rest_position, tcp_rest_orientation], dim=-1),
+                torch.cat([object_position, desired_orientation], dim=-1),
+                torch.cat([desired_position, desired_orientation], dim=-1),
+                torch.cat([above_object_position, desired_orientation], dim=-1),
+                torch.cat([below_goal_position, desired_orientation], dim=-1),
+            )
         
-        # get current state
-        jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
-        root_pose_w = robot.data.root_state_w[:, 0:7]
-        joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
+            dones = env.step(actions)[-2]
 
-        # posizione dell'end-effector relativa al root
-        ee_pos_b, ee_quat_b = subtract_frame_transforms(
-            root_pose_w[:, 0:3], root_pose_w[:, 3:7],
-            ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
-        )
-        # TODO CAMI - ee_pose_b, ee_quat_b -> position and orientation of the end-effector in the base frame
-        # TODO CAMI - joint_pos -> joint position of the robot
-        # Joint + gripper state
-        gripper_state = robot.data.gripper_pos.squeeze(0).cpu().numpy()        # shape (2,)
-        state_full = np.concatenate([joint_pos.squeeze(0).cpu().numpy(), gripper_state])  # shape (9,)
+            camera.update(dt=env.unwrapped.sim.get_physics_dt())
 
-        # EE pose + gripper target
-        ee_pose_np = torch.cat([ee_pos_b, ee_quat_b], dim=1).squeeze(0).cpu().numpy()
-        gripper_action = gripper_pos_des.squeeze(0).cpu().numpy()              # shape (2,)
-        action_full = np.concatenate([ee_pose_np, gripper_action])             # shape (9,)
-        
-        camera_pose_np = torch.cat([camera.data.pose[camera_index]["position"], camera.data.pose[camera_index]["orientation"]], dim=0).cpu().numpy()        
-        save_step_npz(
-            image_array=image_array,
-            joint_angles=state_full,
-            ee_pose=action_full,
-            camera_pose=camera_pose_np,
-            instruction=OPENVLA_INSTRUCTION,
-            step_id=count
-        )
+            # reset state machine
+            if dones.any():
+                # ^ Create the .npy file with the data of the current episode
+                if task_count != 0:
+                    save_episode_stepwise(episode_data)
+                    # ^ Reset the data structures
+                    episode_data = []
+                count = 0
+                rep_writer = rep.BasicWriter(
+                    output_dir=get_next_simulation_folder(),
+                    frame_padding=0,
+                    colorize_instance_id_segmentation=camera.cfg.colorize_instance_id_segmentation,
+                    colorize_instance_segmentation=camera.cfg.colorize_instance_segmentation,
+                    colorize_semantic_segmentation=camera.cfg.colorize_semantic_segmentation,
+                )
+                if RANDOM_CAMERA:
+                    # Base position
+                    base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
+                    
+                    # Random offset in [-0.3, 0.3]
+                    random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
 
-
-
+                    # Final camera position
+                    camera_positions = base_camera_position + random_offset
+                    camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+                    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+                    camera.set_world_poses_from_view(camera_positions, camera_targets)
+                    camera_pose_to_save = torch.cat([camera_positions, camera_targets], dim=-1)
 
 
-        joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
-        # apply actions
-        joint_pos_des = torch.cat((joint_pos_des, gripper_pos_des), dim=1).to(dtype=torch.float32)
-        robot.set_joint_position_target(joint_pos_des, joint_ids=[0, 1, 2, 3, 4, 5, 6, 7, 8])
-        scene.write_data_to_sim()
-        # perform step
-        sim.step()
+                goal_pose = env.unwrapped.command_manager.get_command("object_pose")
 
-        # Update camera data
-        camera.update(dt=sim.get_physics_dt())
+                # Calcola posizione della box
+                if PICK_AND_PLACE:
+                    new_pos = goal_pose[..., :3].clone()
+                    new_pos[..., 2] = 0.0
 
-        # update sim-time
-        count += 1
-        # update buffers
-        scene.update(sim_dt)
+                    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
 
-        goal_reached = check_goal_reached(ik_commands, ee_pose_w)
-        
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
+                    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
+                    root_state[:, 0:3] = new_pos
+                    root_state[:, 3:7] = new_rot
 
+                    # Scrive la nuova pose alla simulazione
+                    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
-        # update marker positions 
-        if VISUALIZE_MARKERS:
-            ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
-            goal_marker.visualize(ik_commands[:, 0:3] + scene.env_origins, ik_commands[:, 3:7])
+                restarted = True
+                pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
+                task_count += 1
+                continue
 
-     
+            count += 1
 
-def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.1):
-    goal_pos = ik_commands[:, 0:3]
-    goal_quat = ik_commands[:, 3:7]
-    current_pos = ee_pose_w[:, 0:3]
-    current_quat = ee_pose_w[:, 3:7]
-
-    # errore posizione
-    position_error = torch.norm(goal_pos - current_pos, dim=1)
-
-    # errore orientamento (angular distance tra quaternioni)
-    quat_dot = torch.abs(torch.sum(goal_quat * current_quat, dim=1))  # q1 · q2
-    quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
-    angle_error = 2 * torch.acos(quat_dot)
-
-    # controllo soglia
-    if position_error.item() < position_threshold and angle_error.item() < angle_threshold:
-        angle_deg = np.degrees(angle_error.item())
-        print(f"🎯 Goal raggiunto! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.2f}°")
-        return True
-    
-    return False
-
+    # close the environment
+    env.close()
 
 def clear_img_folder():
     if os.path.exists("./isaac_ws/src/output/camera"):
-        for file in os.listdir("./isaac_ws/src/output/camera"):
-            if file.startswith("rgb") and file.endswith(".png"):
-                os.remove(os.path.join("./isaac_ws/src/output/camera", file))
+        shutil.rmtree("./isaac_ws/src/output/camera")
+    if os.path.exists("./isaac_ws/src/output/episodes"):
+        shutil.rmtree("./isaac_ws/src/output/episodes")
+    os.mkdir("./isaac_ws/src/output/camera")
+    os.mkdir("./isaac_ws/src/output/episodes")
+
+
+
+
+def get_next_simulation_folder(base_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera")):
+    i = 0
+    while os.path.exists(os.path.join(base_path, f"simulation_{i}")):
+        i += 1
+    # Create the new directory
+    os.makedirs(os.path.join(base_path, f"simulation_{i}"))
+    output_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output", "camera", f"simulation_{i}")
+    return output_dir
+
+def remove_prim(prim_path):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+    if prim.IsValid():
+        stage.RemovePrim(prim_path)
+        print(f"✅ Removed prim at path: {prim_path}")
+    else:
+        print(f"⚠️  No prim found at path: {prim_path}")
+
+def hide_prim(prim_path: str):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+
+    if prim and prim.IsValid():
+        UsdGeom.Imageable(prim).MakeInvisible()
+        print(f"✅ Hidden prim: {prim_path}")
+    else:
+        print(f"⚠️ Prim '{prim_path}' not found or invalid.")
+
 
 def main():
-    """Main function."""
+    # # parse configuration
     clear_img_folder()
-    # Load kit helper
-    sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
-    sim = sim_utils.SimulationContext(sim_cfg)
-    # Set main camera
-    sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
 
-    # usd_path = os.path.join(os.getcwd(), "isaac_ws/src/table_parquet.usd")
-    # omni.usd.get_context().open_stage(usd_path)
-    # stage = omni.usd.get_context().get_stage()
-    # Design scene
-    scene_cfg = TableTopSceneCfg(num_envs=args_cli.num_envs, env_spacing=2.0)
-    scene = InteractiveScene(scene_cfg)
-    # Play the simulator
-    sim.reset()
-    # Now we are ready!
-    print("[INFO]: Setup complete...")
-    # Run the simulator
-    run_simulator(sim, scene)
+    env_cfg = FrankaCubeLiftEnvCfg()
+    env_cfg.sim.device = args_cli.device
+    env_cfg.scene.num_envs = args_cli.num_envs
+    env_cfg.sim.use_fabric = not args_cli.disable_fabric
 
+    env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
+    # create environment
+    env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
+    # reset environment at start
+    env.unwrapped.sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
+
+    # Rimuovi marker dopo che l'ambiente li ha creati automaticamente
+
+    env.reset()
+
+    hide_prim("/Visuals/Command/goal_pose")
+    hide_prim("/Visuals/Command/body_pose")
+
+    
+
+    run_simulator(env, env_cfg, args_cli)
+    
 
 if __name__ == "__main__":
     # run the main function

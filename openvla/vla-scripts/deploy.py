@@ -53,15 +53,12 @@ import argparse
 SERVER_SIDE_FOLDER = "server_side_images"
 DEFAULT_IMAGE_NAME = "received_image"
 BASE_MODEL = "openvla/openvla-7b"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/openvla-7b+sim_data_custom_v0+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/openvla-7b+sim_data_custom_v0+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug"
+FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/train_only_one_move"
 OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path
 
 
-# === Command Line Arguments ===
-parser = argparse.ArgumentParser(description="Get command line arguments")
-# Parse the arguments
-parser.add_argument("--save", action="store_true", help="Save images to server-side folder")
-args = parser.parse_args()
+SAVE_IMAGES = False
 
 # === Utilities ===
 SYSTEM_PROMPT = (
@@ -115,9 +112,9 @@ class OpenVLAServer:
             image, instruction = payload["image"], payload["instruction"]
             unnorm_key = payload.get("unnorm_key", None)
 
-            if args.save:
+            if SAVE_IMAGES:
                 # Save image in .jpg format
-                save_image_with_progressive_filename(image, reset_folder=False)
+                save_image_with_progressive_filename(image)
 
             # Run VLA Inference
             prompt = get_openvla_prompt(instruction, self.openvla_path)
@@ -207,7 +204,7 @@ class DeployConfig:
 
 @draccus.wrap()
 def deploy(cfg: DeployConfig) -> None:
-    if args.save:
+    if SAVE_IMAGES:
         clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
 

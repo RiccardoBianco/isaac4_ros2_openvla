@@ -1,6 +1,6 @@
 """
     # Usage
-    ~/isaac_ws/isaac_lab/isaaclab.sh -p ~/isaac_ws/src/openvla_isaac.py  --enable_cameras --save
+    ~/isaac_ws/isaac_lab/isaaclab.sh -p ~/isaac_ws/src/client_isaac_openvla.py  --enable_cameras --save
 
 """
 
@@ -12,13 +12,19 @@ OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
 VISUALIZE_MARKERS = False
 
-OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in sm_pick.py
+OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
 TARGET_POS = (0.4, 0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
 
-CAMERA_HEIGHT = 256
-CAMERA_WIDTH = 256
+CAMERA_HEIGHT = 512
+CAMERA_WIDTH = 512
 CAMERA_POSITION = [0.9, -0.4, 0.6]
+OLD_CAMERA_POSITION = [1.2, -0.2, 0.8]
 CAMERA_TARGET = [0.3, 0.0, -0.2]
+OLD_CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+# ^ Change this to the desired camera position and target
+CAMERA_POSITION = OLD_CAMERA_POSITION
+CAMERA_TARGET = OLD_CAMERA_TARGET
 
 import argparse
 from isaaclab.app import AppLauncher
@@ -289,20 +295,38 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             )
 
 
+    # object = RigidObjectCfg(
+    #         prim_path="{ENV_REGEX_NS}/Object",
+    #         init_state=RigidObjectCfg.InitialStateCfg(pos=OBJECT_POS, rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
+    #         spawn=sim_utils.UsdFileCfg(
+    #             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+    #             scale=(0.8, 0.8, 0.8),
+    #             rigid_props=RigidBodyPropertiesCfg(
+    #                 solver_position_iteration_count=16,
+    #                 solver_velocity_iteration_count=1,
+    #                 max_angular_velocity=1000.0,
+    #                 max_linear_velocity=1000.0,
+    #                 max_depenetration_velocity=5.0,
+    #                 disable_gravity=False,
+    #             ),
+    #         ),
+    #     )
+    
     object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=OBJECT_POS, rot=[1, 0, 0, 0]), # must be within pos=[(0.2, 0.7)(-0.35, 0.35, 0.2, 0.2)]
-            spawn=sim_utils.UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                scale=(0.8, 0.8, 0.8),
-                rigid_props=RigidBodyPropertiesCfg(
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
+            spawn=sim_utils.CuboidCfg(
+                size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                    metallic=0.0
                 ),
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
     

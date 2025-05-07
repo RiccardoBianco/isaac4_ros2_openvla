@@ -84,3 +84,5 @@ rlds_dataset_builder/sim_data_custom_v0/data
 models/
 
 priv_commands.sh
+
+openvla/vla-scripts/server_side_images/*

@@ -37,7 +37,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         # ? F: DO WE NEED THIS? WE MIGHT ACTUALLY PROVIDE MORE INFORMATION AT TRAINING TIME
                         # ? AND THEN AT TEST TIME ONLY USE IMAGE + PROMPT
                         'wrist_image': tfds.features.Image(
-                            shape=(256, 256, 3),
+                            shape=(512, 512, 3),
                             dtype=np.uint8,
                             encoding_format='png',
                             doc='Wrist camera RGB observation.',
@@ -59,6 +59,11 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                             shape=(7,),
                             dtype=np.float32,
                             doc='Goal pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
+                        ),
+                        'camera_pose': tfds.features.Tensor(
+                            shape=(6,),
+                            dtype=np.float32,
+                            doc='Camera pose, consists of [x, y, z, target_x, target_y, target_z].', # pos + quat in isaacsim notation
                         ),
                     }),
                     # ^ F: THIS IS THE ACTION THE ROBOT IS TAKING - MANDATORY (we are not using the last scalar)
@@ -137,6 +142,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         'state': step['state'],
                         'object_pose': step['object_pose'][0],
                         'goal_pose': step['goal_pose'][0],
+                        'camera_pose': step['camera_pose'][0],
                     },
                     'action': step['action'],
                     'discount': 1.0,
