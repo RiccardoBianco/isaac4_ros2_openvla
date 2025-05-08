@@ -1,5 +1,4 @@
 
-import torch
 import os
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -15,7 +14,7 @@ json_numpy.patch()
 
 
 
-DATASET_PATH = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/rlds_dataset_builder/sim_data_custom_v0/data/val"  # <-- Update this with the actual path
+DATASET_PATH = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/rlds_dataset_builder/sim_data_custom_v0/data/train"  # <-- Update this with the actual path
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 
 # Define the URL of the server endpoint

@@ -6,7 +6,7 @@
 
 # Scipy -> quaternion -> scalar last order [x, y, z, w]
 # Iaaclab -> quaternion -> scalar first order [w, x, y, z]
-PICK_AND_PLACE = False
+PICK_AND_PLACE = True
 if PICK_AND_PLACE: 
     OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 else:
@@ -20,8 +20,8 @@ VISUALIZE_MARKERS = False
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
 TARGET_POS = (0.4, -0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
 
-CAMERA_HEIGHT = 512
-CAMERA_WIDTH = 512
+CAMERA_HEIGHT = 256
+CAMERA_WIDTH = 256
 
 
 

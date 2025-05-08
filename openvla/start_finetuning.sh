@@ -9,7 +9,7 @@ torchrun --standalone --nnodes 1 --nproc-per-node 1 vla-scripts/finetune.py \
   --batch_size 16 \
   --grad_accumulation_steps 1 \
   --learning_rate 5e-4 \
-  --image_aug True \
+  --image_aug False \
   --wandb_project openvla \
   --wandb_entity rbianco-eth-z-rich \
   --save_steps 2500
