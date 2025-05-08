@@ -36,7 +36,11 @@ CUBE_MULTICOLOR = False # ^ Change this to True if you want to use the multicolo
 
 OPENVLA_RESPONSE = False
 
-# ^ Change this to the desired camera position and target
+
+EULER_NOTATION = "zyx" # or 'xyz' 
+# -> zyx rotate first around x, then y, then z axis of the end_effector
+# -> xyz rotate first around z, then y, then x axis of the end_effector
+
 
 import argparse
 from isaaclab.app import AppLauncher
@@ -182,34 +186,42 @@ def scalar_last_to_first(q):
     return [w, x, y, z]
 
 
-def apply_delta(position, orientation, delta):
+# def apply_delta(position, orientation, delta):
+#     """
+#     Apply a delta in ee frame to a position and orientation (quaternion) in the world frame.
+#         Input: 
+#             - position: (x, y, z) in world frame
+#             - orientation: (w, x, y, z) in world frame
+#             - delta: (dx, dy, dz, rx, ry, rz) in ee frame
+#         Output:
+#             - new_pose: (x, y, z, w, x, y, z) in world frame
+#         Note on quaternion order:
+#             - Isaac sim uses scalar first order for quaternions, while scipy uses scalar last order.
+#     """
     
-    position = position.squeeze(0)
-    orientation = orientation.squeeze(0)
+#     R = Rotation.from_quat(scalar_first_to_last(orientation)).as_matrix()
+
+#     # Compute delta in the world frame
+#     world_delta = R @ np.array(delta[:3])
+#     new_position = position + world_delta
 
 
-    R = Rotation.from_quat(scalar_first_to_last(orientation)).as_matrix()
+#     # Apply rotation delta (Euler angles)
+#     r_x = Rotation.from_euler('x', delta[3])
+#     r_y = Rotation.from_euler('y', delta[4])
+#     r_z = Rotation.from_euler('z', delta[5])
 
-    # Compute delta in the world frame
-    world_delta = R @ np.array(delta[:3])
-    new_position = position + world_delta
-
-
-    # Apply rotation delta (Euler angles)
-    r_x = Rotation.from_euler('x', delta[3])
-    r_y = Rotation.from_euler('y', delta[4])
-    r_z = Rotation.from_euler('z', delta[5])
-
-    # Apply the rotation to the current orientation
-    delta_rot = r_x * r_y * r_z # first apply x, then y, then z
-    # delta_rot = r_z* r_y * r_x # first apply z, then y, then x
+#     # Apply the rotation to the current orientation
+#     delta_rot = r_x * r_y * r_z # first apply x, then y, then z
+#     # delta_rot = r_z* r_y * r_x # first apply z, then y, then x
 
 
-    new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
-    new_orientation = scalar_last_to_first(new_orientation) # Needed for isaac sim
+#     new_orientation = (Rotation.from_matrix(R @ delta_rot.as_matrix())).as_quat()
+#     new_orientation = scalar_last_to_first(new_orientation) # Needed for isaac sim
 
-    new_pose = np.concatenate([new_position, new_orientation])  # shape (7,)
-    return new_pose
+#     new_pose = np.concatenate([new_position, new_orientation])  # shape (7,)
+
+#     return new_pose
 
 
 def take_image(camera_index, camera, rep_writer):
@@ -246,6 +258,111 @@ def take_image(camera_index, camera, rep_writer):
 
     return None 
 
+# def compute_delta(ee_pose, next_ee_pose):
+#     """
+#         Compute the delta (expressed in ee frame) between two poses in the world frame.
+#         Input: 
+#             - pose: (x, y, z, roll, pitch, yaw, gripper_state) in world frame
+#             - next_pose: (x, y, z, roll, pitch, yaw, new_gripper_state) in world frame
+#         Output:
+#             - delta: (dx, dy, dz, rx, ry, rz, new_gripper_state) in ee frame
+#     """
+#     # Decomponi le pose
+#     # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
+#     # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
+
+#     pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+#     pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
+
+#     # Rotazioni come oggetti Rotation
+#     rot1 = Rotation.from_euler(EULER_NOTATION, rpy1)
+#     rot2 = Rotation.from_euler(EULER_NOTATION, rpy2)
+
+#     # Calcola la traslazione nel world frame
+#     delta_pos_world = pos2 - pos1
+
+#     # Riporta la traslazione nel frame dell'EE
+#     delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+#     # Calcola rotazione relativa: R_delta = R1^-1 * R2
+#     delta_rot = rot1.inv() * rot2
+
+#     # Estrai rotazione relativa in Euler angles
+#     delta_euler = delta_rot.as_euler(EULER_NOTATION)  # RPY in radianti
+
+#     next_gripper = np.atleast_1d(grip2)
+
+
+#     # Combina il delta finale
+#     delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
+
+#     return delta
+
+
+def compute_delta(ee_pose, next_ee_pose):
+    """
+    Compute the delta (expressed in EE frame) between two poses in the world frame,
+    using quaternions internally.
+    Input:
+        - ee_pose, next_ee_pose: arrays of shape (8,) containing
+            [x, y, z, roll, pitch, yaw, gripper_state]
+    Output:
+        - delta: array of shape (7,) containing
+            [dx, dy, dz, dr, dp, dy, new_gripper_state]
+    """
+    # Decompose inputs
+    pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+    pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
+
+    # Convert to quaternions
+    q1 = Rotation.from_euler(EULER_NOTATION, rpy1)
+    q2 = Rotation.from_euler(EULER_NOTATION, rpy2)
+
+    # Translation delta in world frame
+    delta_pos_world = pos2 - pos1
+    # Express translation in EE frame
+    delta_pos_ee = q1.inv().apply(delta_pos_world)
+
+    # Rotation delta as quaternion
+    q_delta = q1.inv() * q2
+    # Convert back to Euler only for output
+    delta_euler = q_delta.as_euler(EULER_NOTATION)
+
+    # Gripper state
+    next_gripper = np.atleast_1d(grip2)
+
+    # Assemble final delta
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)
+    return delta
+
+
+def apply_delta(position, orientation, delta):
+    """
+    Apply a delta (in EE frame) to a pose in the world frame,
+    using quaternions internally.
+    Input:
+        - position: (x, y, z) world
+        - orientation: (w, x, y, z) quaternion world (scalar-first)
+        - delta: array (7,) [dx, dy, dz, dr, dp, dy, gripper]
+    Output:
+        - new_pose: array (7,) [x, y, z, qw, qx, qy, qz]
+    """
+    # Build current rotation
+    q_world = Rotation.from_quat(scalar_first_to_last(orientation))
+
+    # Translate in world using EE-frame delta
+    world_delta = q_world.apply(delta[:3])
+    new_position = position + world_delta
+
+    # Build rotation delta quaternion
+    q_delta = Rotation.from_euler(EULER_NOTATION, delta[3:6])
+    # Compose rotations
+    q_new = q_world * q_delta
+
+    # Convert back to Isaac format (scalar-first)
+    new_orientation = scalar_last_to_first(q_new.as_quat())
+
+    return np.concatenate([new_position, new_orientation])
 
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
@@ -403,7 +520,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
 
-episode_path = "./isaac_ws/src/episode_0001.npy"
+episode_path = "./isaac_ws/src/output/episodes/episode_0000.npy"
 episode = np.load(episode_path, allow_pickle=True)
 current_step_index = 0
 
@@ -491,7 +608,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # [0.0, 0.0, 0.0, 0.0, 0.0, -np.pi/2], # -90° z
         # [0.0, 0.0, 0.0, np.pi/2, np.pi/2, 0.0], # 90° x and y
         # [0.0, 0.0, 0.0, -np.pi/2, -np.pi/2, 0.0], # -90° x and y
-        [0.0, 0.0, 0.0, np.pi/2, np.pi/2, np.pi/2], # 90° y and z
+        # [0.0, 0.0, 0.0, np.pi/2, np.pi/2, np.pi/2], # 90° y and z
         [0.0, 0.0, 0.0, -np.pi/2, -np.pi, -np.pi/2], # 90° x and z
         [0.0, 0.0, 0.0, np.pi/2, 0.0, np.pi/2], # -90° x and z
     ]
@@ -582,13 +699,41 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             
             #####################################
 
+            ############
+            delta = res[:6] #
+            gripper_pos_des = torch.tensor([[res[6]*MAX_GRIPPER_POSE, res[6]*MAX_GRIPPER_POSE]], device=sim.device) #
 
-            delta = res[:6]
-            gripper_pos_des = torch.tensor([[res[6]*MAX_GRIPPER_POSE, res[6]*MAX_GRIPPER_POSE]], device=sim.device)
-            ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta)
-            #print(f"✅ Nuovo goal: {current_goal_idx}")
-            #delta = ee_goal_deltas[current_goal_idx]
-            #ee_goal = apply_delta(ee_pos_b.cpu().numpy(), ee_quat_b.cpu().numpy(), delta.cpu().numpy())
+            euler_orientation_pose = Rotation.from_quat(scalar_first_to_last(ee_quat_b.cpu().numpy().squeeze(0))).as_euler(EULER_NOTATION)
+            ee_pose_eul = np.concatenate([ee_pos_b.cpu().numpy().squeeze(0), euler_orientation_pose, gripper_pos_des.cpu().numpy().squeeze(0)])
+            
+            ee_goal = apply_delta(ee_pos_b.cpu().numpy().squeeze(0), ee_quat_b.cpu().numpy().squeeze(0), delta) #
+
+            euler_orientation_goal = Rotation.from_quat(scalar_first_to_last(ee_goal[3:7])).as_euler(EULER_NOTATION)
+            ee_goal_eul = np.concatenate([ee_goal[:3], euler_orientation_goal, gripper_pos_des.cpu().numpy().squeeze(0)])
+            recomputed_delta = compute_delta(ee_pose_eul, ee_goal_eul)
+            print("\n\nDELTA position: ", delta[:3])
+            print("RECOMPUTED DELTA position: ", recomputed_delta[:3], "\n")
+            print("DELTA orientation: ", delta[3:6])
+            print("RECOMPUTED DELTA orientation: ", recomputed_delta[3:6], "\n\n")
+            ###########
+
+            # print(f"✅ Nuovo goal: {current_goal_idx}") #
+            # delta = ee_goal_deltas[current_goal_idx] #
+
+            # euler_orientation_pose = Rotation.from_quat(scalar_first_to_last(ee_quat_b.cpu().numpy().squeeze(0))).as_euler(EULER_NOTATION)
+            # ee_pose_eul = np.concatenate([ee_pos_b.cpu().numpy().squeeze(0), euler_orientation_pose, gripper_pos_des.cpu().numpy().squeeze(0)])
+            
+            # ee_goal = apply_delta(ee_pos_b.cpu().numpy().squeeze(0), ee_quat_b.cpu().numpy().squeeze(0), delta.cpu().numpy()) #
+
+            # euler_orientation_goal = Rotation.from_quat(scalar_first_to_last(ee_goal[3:7])).as_euler(EULER_NOTATION)
+            # ee_goal_eul = np.concatenate([ee_goal[:3], euler_orientation_goal, gripper_pos_des.cpu().numpy().squeeze(0)])
+            # recomputed_delta = compute_delta(ee_pose_eul, ee_goal_eul)
+            # print("\n\nDELTA position: ", delta[:3])
+            # print("RECOMPUTED DELTA position: ", recomputed_delta[:3], "\n")
+            # print("DELTA orientation: ", delta[3:6])
+            # print("RECOMPUTED DELTA orientation: ", recomputed_delta[3:6], "\n\n")
+            # #############
+
             ee_goal = torch.tensor(ee_goal, device=sim.device).unsqueeze(0)
             ik_commands[:] = ee_goal
             joint_pos_des = joint_pos[:, robot_entity_cfg.joint_ids].clone()

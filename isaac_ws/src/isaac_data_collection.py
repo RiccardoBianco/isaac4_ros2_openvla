@@ -43,6 +43,14 @@ INIT_OBJECT_POS = [0.5, 0, 0.055]
 
 CUBE_MULTICOLOR = False
 
+
+VISUALIZE_MARKERS = True
+
+
+EULER_NOTATION = "zyx" # or 'xyz' 
+# -> zyx rotate first around x, then y, then z axis of the end_effector
+# -> xyz rotate first around z, then y, then x axis of the end_effector
+
 import argparse
 
 from isaaclab.app import AppLauncher
@@ -135,6 +143,9 @@ def scalar_last_to_first(q):
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+
+
+
 # def compute_delta(ee_pose, next_ee_pose, gripper_state):
 #     # Decomponi le pose
 #     pos1, quat1 = ee_pose[:3], ee_pose[3:]
@@ -154,41 +165,85 @@ from scipy.spatial.transform import Rotation
 #     delta_rot = rot1.inv() * rot2
 
 #     # Estrai rotazione relativa in Euler angles
-#     delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
+#     delta_euler = delta_rot.as_euler('EULER_NOTATION')  # RPY in radianti
 
 #     # Combina in unico array
 #     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
-#     return delta
-def compute_delta(ee_pose, next_ee_pose):
-    # Decomponi le pose
-    # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
-    # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
+# #     return delta
+# def compute_delta(ee_pose, next_ee_pose):
+#     """
+#         Compute the delta (expressed in ee frame) between two poses in the world frame.
+#         Input: 
+#             - pose: (x, y, z, roll, pitch, yaw, gripper_state) in world frame
+#             - next_pose: (x, y, z, roll, pitch, yaw, new_gripper_state) in world frame
+#         Output:
+#             - delta: (dx, dy, dz, rx, ry, rz, new_gripper_state) in ee frame
+#     """
+#     # Decomponi le pose
+#     # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
+#     # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
 
+#     pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+#     pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
+
+#     # Rotazioni come oggetti Rotation
+#     rot1 = Rotation.from_euler('EULER_NOTATION', rpy1)
+#     rot2 = Rotation.from_euler('EULER_NOTATION', rpy2)
+
+#     # Calcola la traslazione nel world frame
+#     delta_pos_world = pos2 - pos1
+
+#     # Riporta la traslazione nel frame dell'EE
+#     delta_pos_ee = rot1.inv().apply(delta_pos_world)
+
+#     # Calcola rotazione relativa: R_delta = R1^-1 * R2
+#     delta_rot = rot1.inv() * rot2
+
+#     # Estrai rotazione relativa in Euler angles
+#     delta_euler = delta_rot.as_euler('EULER_NOTATION')  # RPY in radianti
+
+#     next_gripper = np.atleast_1d(grip2)
+
+
+#     # Combina il delta finale
+#     delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
+
+#     return delta
+
+def compute_delta(ee_pose, next_ee_pose):
+    """
+    Compute the delta (expressed in EE frame) between two poses in the world frame,
+    using quaternions internally.
+    Input:
+        - ee_pose, next_ee_pose: arrays of shape (8,) containing
+            [x, y, z, roll, pitch, yaw, gripper_state]
+    Output:
+        - delta: array of shape (7,) containing
+            [dx, dy, dz, dr, dp, dy, new_gripper_state]
+    """
+    # Decompose inputs
     pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
     pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
 
-    # Rotazioni come oggetti Rotation
-    rot1 = Rotation.from_euler('xyz', rpy1)
-    rot2 = Rotation.from_euler('xyz', rpy2)
+    # Convert to quaternions
+    q1 = Rotation.from_euler(EULER_NOTATION, rpy1)
+    q2 = Rotation.from_euler(EULER_NOTATION, rpy2)
 
-    # Calcola la traslazione nel world frame
+    # Translation delta in world frame
     delta_pos_world = pos2 - pos1
+    # Express translation in EE frame
+    delta_pos_ee = q1.inv().apply(delta_pos_world)
 
-    # Riporta la traslazione nel frame dell'EE
-    delta_pos_ee = rot1.inv().apply(delta_pos_world)
+    # Rotation delta as quaternion
+    q_delta = q1.inv() * q2
+    # Convert back to Euler only for output
+    delta_euler = q_delta.as_euler(EULER_NOTATION)
 
-    # Calcola rotazione relativa: R_delta = R1^-1 * R2
-    delta_rot = rot1.inv() * rot2
-
-    # Estrai rotazione relativa in Euler angles
-    delta_euler = delta_rot.as_euler('xyz')  # RPY in radianti
-
+    # Gripper state
     next_gripper = np.atleast_1d(grip2)
 
-
-    # Combina il delta finale
-    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
-
+    # Assemble final delta
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)
     return delta
 
 
@@ -742,11 +797,11 @@ def get_current_state(robot):
     # print("gripper_state: ", gripper_state.shape)
     # print("gripper_state: ", gripper_state)
     quat_np = scalar_first_to_last(ee_quat_b[0].cpu().numpy())  # shape (4,)
-    R_xyz_np = Rotation.from_quat(quat_np).as_euler('xyz') # shape (3,)
-    R_xyz = torch.tensor(R_xyz_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
+    R_euler_np = Rotation.from_quat(quat_np).as_euler(EULER_NOTATION) # shape (3,)
+    R_euler = torch.tensor(R_euler_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
     pad = torch.tensor([[0.0]], device=ee_pos_b.device)
-    current_state = torch.cat([ee_pos_b, R_xyz, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
-    #current_state = torch.cat([ee_pos_b, R_xyz, gripper_state], dim=-1) # shape: (1, 7)
+    current_state = torch.cat([ee_pos_b, R_euler, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
+    #current_state = torch.cat([ee_pos_b, R_euler, gripper_state], dim=-1) # shape: (1, 7)
     return current_state
                 
 
@@ -887,17 +942,17 @@ def run_simulator(env, env_cfg, args_cli):
     while simulation_app.is_running():
 
 
-        if not printed:
-            if PickSmState.REST != pick_sm.sm_state[0].item():
-                printed = True
-            joint_pos = robot.data.joint_pos.clone()
-            print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
-            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
-            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
-            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+        # if not printed:
+        #     if PickSmState.REST != pick_sm.sm_state[0].item():
+        #         printed = True
+        #     joint_pos = robot.data.joint_pos.clone()
+        #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+        #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+        #     tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+        #     tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
 
-            print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
-            print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
+        #     print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+        #     print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
 
 
 
@@ -1092,9 +1147,9 @@ def main():
     # Rimuovi marker dopo che l'ambiente li ha creati automaticamente
 
     env.reset()
-
-    hide_prim("/Visuals/Command/goal_pose")
-    hide_prim("/Visuals/Command/body_pose")
+    if not VISUALIZE_MARKERS:   
+        hide_prim("/Visuals/Command/goal_pose")
+        hide_prim("/Visuals/Command/body_pose")
 
     
 
