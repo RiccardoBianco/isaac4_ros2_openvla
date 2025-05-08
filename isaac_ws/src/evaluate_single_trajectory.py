@@ -15,7 +15,7 @@ else:
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
-VISUALIZE_MARKERS = False
+VISUALIZE_MARKERS = True
 
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
 TARGET_POS = (0.4, -0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
@@ -403,7 +403,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
 
-episode_path = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/rlds_dataset_builder/sim_data_custom_v0/data/train/episode_0000.npy"
+episode_path = "./isaac_ws/src/episode_0001.npy"
 episode = np.load(episode_path, allow_pickle=True)
 current_step_index = 0
 
@@ -414,7 +414,9 @@ def get_next_ground_truth_action():
 
     # Controlla se ci sono ancora step disponibili
     if current_step_index >= len(episode):
-        raise IndexError("Nessun altro step disponibile nell'episodio.")
+        print("No more steps available in the episode. Closing the simulation.")
+        simulation_app.close()
+        exit(0)
 
     # Ottieni lo step corrente
     step = episode[current_step_index]
@@ -500,7 +502,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
     # init_ee_pos = [0.5, 0.0, 0.4, 0, 1, 0, 0]
-    init_ee_pos = [4.4507e-01, 0,  4.0302e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+    # init_ee_pos = [4.4507e-01, 0,  4.0302e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+    init_ee_pos = [ 4.5067e-01, -1.8113e-05,  3.9752e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+
     ik_commands[:] = torch.tensor(init_ee_pos, device=sim.device) # TODO check if necessary
 
     # Specify robot-specific parameters
@@ -637,7 +641,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
      
 
-def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.0005, angle_threshold=0.01):
+def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.00005, angle_threshold=0.001):
     goal_pos = ik_commands[:, 0:3]
     goal_quat = ik_commands[:, 3:7]
     current_pos = ee_pose_w[:, 0:3]
