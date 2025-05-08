@@ -15,7 +15,7 @@ else:
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0" # TODO check if this is correct -> sim_data_custom_v0
 MAX_GRIPPER_POSE = 1.0  # TODO check if this is correct
-VISUALIZE_MARKERS = True
+VISUALIZE_MARKERS = False
 
 OBJECT_POS = [0.5, 0, 0.055] # Must be equal to init object pose in isaac_data_collection.py
 TARGET_POS = (0.4, -0.35, 0.0) # Must be equal to target range in lift_env_cfg_pers.py
@@ -34,7 +34,7 @@ CAMERA_TARGET = [0.0, 0.0, -0.3]
 
 CUBE_MULTICOLOR = False # ^ Change this to True if you want to use the multicolor cube
 
-OPENVLA_RESPONSE = False
+OPENVLA_RESPONSE = True
 
 
 EULER_NOTATION = "zyx" # or 'xyz' 
@@ -520,7 +520,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
 
-episode_path = "./isaac_ws/src/output/episodes/episode_0000.npy"
+episode_path = "./isaac_ws/src/episode_0000.npy"
 episode = np.load(episode_path, allow_pickle=True)
 current_step_index = 0
 
@@ -542,7 +542,7 @@ def get_next_ground_truth_action():
     current_step_index += 1
 
     # Ritorna il campo "action"
-    return step["action"]
+    return step
     
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
@@ -619,8 +619,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Create buffers to store actions
     ik_commands = torch.zeros(scene.num_envs, diff_ik_controller.action_dim, device=robot.device)
     # init_ee_pos = [0.5, 0.0, 0.4, 0, 1, 0, 0]
-    # init_ee_pos = [4.4507e-01, 0,  4.0302e-01, 0.0086, 0.9218, 0.0204, 0.3871]
-    init_ee_pos = [ 4.5067e-01, -1.8113e-05,  3.9752e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+
+    # init_ee_pos = [ 4.5067e-01, -1.8113e-05,  3.9752e-01, 0.0086, 0.9218, 0.0204, 0.3871]
+    quat = Rotation.from_euler(EULER_NOTATION, [-3.4807291e-02, 6.9246048e-01, 3.1373665e+00]).as_quat()
+    quat_isaac = scalar_last_to_first(quat)
+
+    init_ee_pos = [3.7324736e-01,  1.6673391e-04,  4.3809804e-01] + quat_isaac
+
+    
+
+    # INIT JOINT POS [-2.9808e-05, -6.4019e-01, -8.9470e-06, -2.8247e+00,  2.5376e-05, 2.9797e+00,  7.4100e-01,  4.0000e-02,  4.0000e-02]
 
     ik_commands[:] = torch.tensor(init_ee_pos, device=sim.device) # TODO check if necessary
 
@@ -661,8 +669,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             # Initialization - move to home position
             joint_pos = robot.data.default_joint_pos.clone()
-            # print("\n\nINITIAL JOINT POS", joint_pos) # [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
             joint_vel = robot.data.default_joint_vel.clone()
+            
+            joint_pos = torch.tensor([-2.9808e-05, -6.4019e-01, -8.9470e-06, -2.8247e+00,  2.5376e-05, 2.9797e+00,  7.4100e-01,  4.0000e-02,  4.0000e-02], device=sim.device)
+            # print("\n\nINITIAL JOINT POS", joint_pos) # [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
             robot.write_joint_state_to_sim(joint_pos, joint_vel)
             robot.reset()
 
@@ -694,8 +704,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 if res is None:
                     print("Error in sending request to OpenVLA.")
                     continue
-            else:
-                res = get_next_ground_truth_action()
+            # else:
+                step = get_next_ground_truth_action()
+                #res = step["action"]
+                gt_state = step["state"]
+                print("\nGT STATE: ", gt_state)
+
             
             #####################################
 
@@ -711,6 +725,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             euler_orientation_goal = Rotation.from_quat(scalar_first_to_last(ee_goal[3:7])).as_euler(EULER_NOTATION)
             ee_goal_eul = np.concatenate([ee_goal[:3], euler_orientation_goal, gripper_pos_des.cpu().numpy().squeeze(0)])
             recomputed_delta = compute_delta(ee_pose_eul, ee_goal_eul)
+            print("CURRENT STATE: ", ee_pose_eul, "\n")
             print("\n\nDELTA position: ", delta[:3])
             print("RECOMPUTED DELTA position: ", recomputed_delta[:3], "\n")
             print("DELTA orientation: ", delta[3:6])
