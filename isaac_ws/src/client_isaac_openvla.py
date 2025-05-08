@@ -286,23 +286,24 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     #     ),
     #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0)),
     # )
-    box = RigidObjectCfg(
-                prim_path="/World/Box",
-                spawn=sim_utils.CuboidCfg(
-                    size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
-                        metallic=0.0
+    if PICK_AND_PLACE:
+        box = RigidObjectCfg(
+                    prim_path="/World/Box",
+                    spawn=sim_utils.CuboidCfg(
+                        size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
+                        rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                        mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                        collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                        visual_material=sim_utils.PreviewSurfaceCfg(
+                            diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                            metallic=0.0
+                        ),
                     ),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=TARGET_POS,  # Posizione iniziale
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
+                    init_state=RigidObjectCfg.InitialStateCfg(
+                        pos=TARGET_POS,  # Posizione iniziale
+                        rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                    ),
+                )
 
     if CUBE_MULTICOLOR:
         object = RigidObjectCfg(
