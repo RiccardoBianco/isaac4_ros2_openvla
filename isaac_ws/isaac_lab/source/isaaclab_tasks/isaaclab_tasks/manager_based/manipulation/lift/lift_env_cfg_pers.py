@@ -42,7 +42,7 @@ OBJECT_Z_RANGE = (0.0, 0.0)
 # Range is a ABSOLUTE position of the goal
 TARGET_X_RANGE = (0.3, 0.7)
 TARGET_Y_RANGE = (-0.35, 0.35)
-TARGET_Z_RANGE = (0.2, 0.2)
+TARGET_Z_RANGE = (0.025, 0.025)
 
 # TARGET_X_RANGE = (0.4, 0.4)
 # TARGET_Y_RANGE = (-0.35, -0.35)
@@ -179,6 +179,7 @@ class RewardsCfg:
         weight=5.0,
     )
 
+
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -198,6 +199,7 @@ class TerminationsCfg:
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")}
     )
+
 
 
 @configclass
@@ -238,7 +240,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         """Post initialization."""
         # general settings
         self.decimation = 2
-        self.episode_length_s = 5.0
+        self.episode_length_s = 6.0
         # simulation settings
         self.sim.dt = 0.01  # 100Hz
         self.sim.render_interval = self.decimation

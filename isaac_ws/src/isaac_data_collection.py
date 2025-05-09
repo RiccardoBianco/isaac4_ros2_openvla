@@ -13,12 +13,8 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 """Launch Omniverse Toolkit first."""
 
-PICK_AND_PLACE = True # set to False to only pick and lift the object, bringing it back to the goal pose
 
-if PICK_AND_PLACE: 
-    OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
-else:
-    OPENVLA_INSTRUCTION = "Pick the green cube and lift it. \n"
+OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 
 
 RANDOM_CAMERA = False
@@ -43,13 +39,7 @@ INIT_OBJECT_POS = [0.5, 0, 0.055]
 
 CUBE_MULTICOLOR = False
 
-
-VISUALIZE_MARKERS = False
-
-
-EULER_NOTATION = "zyx" # or 'xyz' 
-# -> zyx rotate first around x, then y, then z axis of the end_effector
-# -> xyz rotate first around z, then y, then x axis of the end_effector
+EULER_NOTATION = "zyx" 
 
 import argparse
 
@@ -143,42 +133,7 @@ def scalar_last_to_first(q):
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-
-
-
-# def compute_delta(ee_pose, next_ee_pose, gripper_state):
-#     # Decomponi le pose
-#     pos1, quat1 = ee_pose[:3], ee_pose[3:]
-#     pos2, quat2 = next_ee_pose[:3], next_ee_pose[3:]
-
-#     # Converti i quaternioni in rotazioni (convertendo l'ordine per scipy)
-#     rot1 = Rotation.from_quat(scalar_first_to_last(quat1))
-#     rot2 = Rotation.from_quat(scalar_first_to_last(quat2))
-
-#     # Calcola la traslazione nel world frame
-#     delta_pos_world = pos2 - pos1
-
-#     # Riporta la traslazione nel frame dell'EE
-#     delta_pos_ee = rot1.inv().apply(delta_pos_world)
-
-#     # Calcola rotazione relativa: R_delta = R1^-1 * R2
-#     delta_rot = rot1.inv() * rot2
-
-#     # Estrai rotazione relativa in Euler angles
-#     delta_euler = delta_rot.as_euler('EULER_NOTATION')  # RPY in radianti
-
-#     # Combina in unico array
-#     delta = np.concatenate([delta_pos_ee, delta_euler, gripper_state])  # shape (7,)
-# #     return delta
 # def compute_delta(ee_pose, next_ee_pose):
-#     """
-#         Compute the delta (expressed in ee frame) between two poses in the world frame.
-#         Input: 
-#             - pose: (x, y, z, roll, pitch, yaw, gripper_state) in world frame
-#             - next_pose: (x, y, z, roll, pitch, yaw, new_gripper_state) in world frame
-#         Output:
-#             - delta: (dx, dy, dz, rx, ry, rz, new_gripper_state) in ee frame
-#     """
 #     # Decomponi le pose
 #     # pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[6]
 #     # pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[6] # no padding
@@ -187,8 +142,8 @@ from scipy.spatial.transform import Rotation
 #     pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
 
 #     # Rotazioni come oggetti Rotation
-#     rot1 = Rotation.from_euler('EULER_NOTATION', rpy1)
-#     rot2 = Rotation.from_euler('EULER_NOTATION', rpy2)
+#     rot1 = Rotation.from_euler(EULER_NOTATION, rpy1)
+#     rot2 = Rotation.from_euler(EULER_NOTATION, rpy2)
 
 #     # Calcola la traslazione nel world frame
 #     delta_pos_world = pos2 - pos1
@@ -200,7 +155,7 @@ from scipy.spatial.transform import Rotation
 #     delta_rot = rot1.inv() * rot2
 
 #     # Estrai rotazione relativa in Euler angles
-#     delta_euler = delta_rot.as_euler('EULER_NOTATION')  # RPY in radianti
+#     delta_euler = delta_rot.as_euler(EULER_NOTATION)  # RPY in radianti
 
 #     next_gripper = np.atleast_1d(grip2)
 
@@ -209,6 +164,7 @@ from scipy.spatial.transform import Rotation
 #     delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)  # shape (7,)
 
 #     return delta
+
 
 def compute_delta(ee_pose, next_ee_pose):
     """
@@ -245,6 +201,7 @@ def compute_delta(ee_pose, next_ee_pose):
     # Assemble final delta
     delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)
     return delta
+
 
 
 
@@ -306,7 +263,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
                 spawn=UsdFileCfg(
                     usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                    scale=(0.8, 0.8, 0.8),
+                    scale=(0.7, 0.7, 0.7),
                     rigid_props=RigidBodyPropertiesCfg(
                         solver_position_iteration_count=16,
                         solver_velocity_iteration_count=1,
@@ -321,7 +278,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             self.scene.object = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Object",
                 spawn=sim_utils.CuboidCfg(
-                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    size=(0.04, 0.04, 0.04),  # Dimensioni del cubo
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
@@ -361,24 +318,24 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         #     ),
         #     init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.4, 0.0)),
         # )
-        if PICK_AND_PLACE:
-            self.scene.box = RigidObjectCfg(
-                prim_path="/World/Box",
-                spawn=sim_utils.CuboidCfg(
-                    size=(0.1, 0.1, 0.01),  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
-                        metallic=0.0
-                    ),
+
+        self.scene.box = RigidObjectCfg(
+            prim_path="/World/Box",
+            spawn=sim_utils.CuboidCfg(
+                size=(0.1, 0.1, 0.005),  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                    metallic=0.0
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
         
 
 
@@ -462,26 +419,30 @@ class PickSmState:
     GRASP_OBJECT = wp.constant(3)
     LIFT_OBJECT = wp.constant(4)
 
+    PLACE_ABOVE_GOAL = wp.constant(5)
+    PLACE_ON_GOAL = wp.constant(6)
 
-    PLACE_ON_GOAL = wp.constant(5)
-    PLACE_BELOW_GOAL = wp.constant(6)
     RELEASE_OBJECT = wp.constant(7)
-    RETURN_HOME = wp.constant(8)
+    MOVE_ABOVE_GOAL = wp.constant(8)
+    TERMINAL_STATE = wp.constant(9)  # not used, but for clarity
 
 
 class PickSmWaitTime:
     """Additional wait times (in s) for states for before switching."""
 
     REST = wp.constant(1.0)
-    APPROACH_ABOVE_OBJECT = wp.constant(0.5)
+    APPROACH_ABOVE_OBJECT = wp.constant(0.8)
     APPROACH_OBJECT = wp.constant(0.6)
     GRASP_OBJECT = wp.constant(0.3)
     LIFT_OBJECT = wp.constant(0.5)
 
-    PLACE_ON_GOAL = wp.constant(0.4)
-    PLACE_BELOW_GOAL = wp.constant(0.4)
-    RELEASE_OBJECT = wp.constant(0.4)
-    RETURN_HOME = wp.constant(0.5)
+    PLACE_ABOVE_GOAL = wp.constant(0.1) # 0.1 molto fluido -> diretto al goal 
+    # PLACE_ABOVE_GOAL = wp.constant(1.0) # per andare sopra al goal -> 0.1 per ignoare quello step
+    PLACE_ON_GOAL = wp.constant(0.6)
+    
+    RELEASE_OBJECT = wp.constant(0.3)
+    MOVE_ABOVE_GOAL = wp.constant(0.5)
+    TERMINAL_STATE = wp.constant(1.0)  # not used, but for clarity
 
 
 @wp.func
@@ -498,7 +459,7 @@ def infer_state_machine(
     object_pose: wp.array(dtype=wp.transform),
     des_object_pose: wp.array(dtype=wp.transform),
     above_object_pose: wp.array(dtype=wp.transform),
-    below_goal_pose: wp.array(dtype=wp.transform),
+    above_goal_pose: wp.array(dtype=wp.transform),
     des_ee_pose: wp.array(dtype=wp.transform),
     gripper_state: wp.array(dtype=float),
     offset: wp.array(dtype=wp.transform),
@@ -517,103 +478,75 @@ def infer_state_machine(
             # move to next state and reset wait time
             sm_state[tid] = PickSmState.APPROACH_ABOVE_OBJECT
             sm_wait_time[tid] = 0.0
+
     elif state == PickSmState.APPROACH_ABOVE_OBJECT:
         des_ee_pose[tid] = wp.transform_multiply(offset[tid], object_pose[tid])
         gripper_state[tid] = GripperState.OPEN
-        if distance_below_threshold(
-            wp.transform_get_translation(ee_pose[tid]),
-            wp.transform_get_translation(des_ee_pose[tid]),
-            position_threshold,
-        ):
-            # wait for a while
-            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
-                # move to next state and reset wait time
-                sm_state[tid] = PickSmState.APPROACH_OBJECT
-                sm_wait_time[tid] = 0.0
+        if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT or distance_below_threshold(wp.transform_get_translation(ee_pose[tid]),wp.transform_get_translation(des_ee_pose[tid]),position_threshold,):
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.APPROACH_OBJECT
+            sm_wait_time[tid] = 0.0
+
     elif state == PickSmState.APPROACH_OBJECT:
         des_ee_pose[tid] = object_pose[tid]
         gripper_state[tid] = GripperState.OPEN
-        if distance_below_threshold(
-            wp.transform_get_translation(ee_pose[tid]),
-            wp.transform_get_translation(des_ee_pose[tid]),
-            position_threshold,
-        ):
-            if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT:
-                # move to next state and reset wait time
-                sm_state[tid] = PickSmState.GRASP_OBJECT
-                sm_wait_time[tid] = 0.0
+        if sm_wait_time[tid] >= PickSmWaitTime.APPROACH_OBJECT or distance_below_threshold(wp.transform_get_translation(ee_pose[tid]), wp.transform_get_translation(des_ee_pose[tid]), position_threshold):
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.GRASP_OBJECT
+            sm_wait_time[tid] = 0.0
+
     elif state == PickSmState.GRASP_OBJECT:
         des_ee_pose[tid] = object_pose[tid]
         gripper_state[tid] = GripperState.CLOSE
         # wait for a while
         if sm_wait_time[tid] >= PickSmWaitTime.GRASP_OBJECT:
             # move to next state and reset wait time
-            sm_state[tid] = PickSmState.PLACE_ON_GOAL # TODO: LIFT_OBJECT if we want to lift first
+            sm_state[tid] = PickSmState.LIFT_OBJECT # TODO: LIFT_OBJECT if we want to lift first
             sm_wait_time[tid] = 0.0
-    # elif state == PickSmState.LIFT_OBJECT:
-    #     des_ee_pose[tid] = above_object_pose[tid]
-    #     gripper_state[tid] = GripperState.CLOSE
-    #     if distance_below_threshold(
-    #         wp.transform_get_translation(ee_pose[tid]),
-    #         wp.transform_get_translation(des_ee_pose[tid]),
-    #         position_threshold,
-    #     ):
-    #         # wait for a while
-    #         if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT:
-    #             # move to next state and reset wait time
-    #             sm_state[tid] = PickSmState.PLACE_ABOVE_GOAL
-    #             sm_wait_time[tid] = 0.0
+
+    elif state == PickSmState.LIFT_OBJECT:
+        des_ee_pose[tid] = above_object_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if sm_wait_time[tid] >= PickSmWaitTime.LIFT_OBJECT or distance_below_threshold(wp.transform_get_translation(ee_pose[tid]), wp.transform_get_translation(des_ee_pose[tid]), position_threshold):
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.PLACE_ABOVE_GOAL
+            sm_wait_time[tid] = 0.0
+
+   
+    elif state == PickSmState.PLACE_ABOVE_GOAL:
+        des_ee_pose[tid] = above_goal_pose[tid]
+        gripper_state[tid] = GripperState.CLOSE
+        if sm_wait_time[tid] >= PickSmWaitTime.PLACE_ABOVE_GOAL or distance_below_threshold(wp.transform_get_translation(ee_pose[tid]), wp.transform_get_translation(des_ee_pose[tid]), position_threshold):
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.PLACE_ON_GOAL
+            sm_wait_time[tid] = 0.0
+
     elif state == PickSmState.PLACE_ON_GOAL:
         des_ee_pose[tid] = des_object_pose[tid]
         gripper_state[tid] = GripperState.CLOSE
-        if distance_below_threshold(
-            wp.transform_get_translation(ee_pose[tid]),
-            wp.transform_get_translation(des_ee_pose[tid]),
-            position_threshold,
-        ):
+        if distance_below_threshold(wp.transform_get_translation(ee_pose[tid]), wp.transform_get_translation(des_ee_pose[tid]), position_threshold):
             # wait for a while
             if sm_wait_time[tid] >= PickSmWaitTime.PLACE_ON_GOAL:
                 # move to next state and reset wait time
-                if PICK_AND_PLACE:
-                    sm_state[tid] = PickSmState.PLACE_BELOW_GOAL
-                else:
-                    sm_state[tid] = PickSmState.PLACE_ON_GOAL
-                sm_wait_time[tid] = 0.0
-                
-    elif state == PickSmState.PLACE_BELOW_GOAL and PICK_AND_PLACE:
-        des_ee_pose[tid] = below_goal_pose[tid]
-        gripper_state[tid] = GripperState.CLOSE
-        if distance_below_threshold(
-            wp.transform_get_translation(ee_pose[tid]),
-            wp.transform_get_translation(des_ee_pose[tid]),
-            position_threshold,
-        ):
-            # wait for a while
-            if sm_wait_time[tid] >= PickSmWaitTime.PLACE_BELOW_GOAL:
-                # move to next state and reset wait time
                 sm_state[tid] = PickSmState.RELEASE_OBJECT
                 sm_wait_time[tid] = 0.0
-    elif state == PickSmState.RELEASE_OBJECT and PICK_AND_PLACE:
-        des_ee_pose[tid] = below_goal_pose[tid]
-        gripper_state[tid] = GripperState.OPEN
-        # wait for a while
-        if sm_wait_time[tid] >= PickSmWaitTime.RELEASE_OBJECT:
-            # move to next state and reset wait time
-            sm_state[tid] = PickSmState.RETURN_HOME
-            sm_wait_time[tid] = 0.0
-    elif state == PickSmState.RETURN_HOME and PICK_AND_PLACE:
+
+    elif state == PickSmState.RELEASE_OBJECT:
         des_ee_pose[tid] = des_object_pose[tid]
         gripper_state[tid] = GripperState.OPEN
-        if distance_below_threshold(
-            wp.transform_get_translation(ee_pose[tid]),
-            wp.transform_get_translation(des_ee_pose[tid]),
-            position_threshold,
-        ):
-            # wait for a while
-            if sm_wait_time[tid] >= PickSmWaitTime.RETURN_HOME:
-                # move to next state and reset wait time
-                sm_state[tid] = PickSmState.RETURN_HOME
-                sm_wait_time[tid] = 0.0
+        if sm_wait_time[tid] >= PickSmWaitTime.RELEASE_OBJECT:
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.MOVE_ABOVE_GOAL
+            sm_wait_time[tid] = 0.0
+
+    elif state == PickSmState.MOVE_ABOVE_GOAL:
+        des_ee_pose[tid] = above_goal_pose[tid]
+        gripper_state[tid] = GripperState.OPEN
+        if sm_wait_time[tid] >= PickSmWaitTime.MOVE_ABOVE_GOAL or distance_below_threshold(wp.transform_get_translation(ee_pose[tid]), wp.transform_get_translation(des_ee_pose[tid]), position_threshold):
+            # move to next state and reset wait time
+            sm_state[tid] = PickSmState.TERMINAL_STATE
+            sm_wait_time[tid] = 0.0
+        
 
 
 
@@ -678,21 +611,28 @@ class PickAndLiftSm:
         self.sm_state[env_ids] = 0
         self.sm_wait_time[env_ids] = 0.0
 
-    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor, above_object_pose: torch.Tensor, below_goal_pose: torch.Tensor) -> torch.Tensor:
+    def compute(self, ee_pose: torch.Tensor, object_pose: torch.Tensor, des_object_pose: torch.Tensor, above_object_pose: torch.Tensor, above_goal_pose: torch.Tensor) -> torch.Tensor:
         """Compute the desired state of the robot's end-effector and the gripper."""
         # convert all transformations from (w, x, y, z) to (x, y, z, w)
         ee_pose = ee_pose[:, [0, 1, 2, 4, 5, 6, 3]]
         object_pose = object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
         des_object_pose = des_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
         above_object_pose = above_object_pose[:, [0, 1, 2, 4, 5, 6, 3]]
-        below_goal_pose = below_goal_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+        above_goal_pose = above_goal_pose[:, [0, 1, 2, 4, 5, 6, 3]]
+
+        # print("ee_pose: ", ee_pose) # ee pose
+        # print("cube pose: ", object_pose) # posizione del cubo
+        # print("sopra piattaforma rossa: ", des_object_pose) # dove porta l'oggetto in alto
+        # # print("above_object_pose: ", above_object_pose) # sopra a dove prende l'oggetto
+        # print("piattaforma rossa: ", above_goal_pose) # piattaforma rossa
+
 
         # convert to warp
         ee_pose_wp = wp.from_torch(ee_pose.contiguous(), wp.transform)
         object_pose_wp = wp.from_torch(object_pose.contiguous(), wp.transform)
         des_object_pose_wp = wp.from_torch(des_object_pose.contiguous(), wp.transform)
         above_object_pose_wp = wp.from_torch(above_object_pose.contiguous(), wp.transform)
-        below_goal_pose_wp = wp.from_torch(below_goal_pose.contiguous(), wp.transform)
+        above_goal_pose_wp = wp.from_torch(above_goal_pose.contiguous(), wp.transform)
 
         # run state machine
         wp.launch(
@@ -706,7 +646,7 @@ class PickAndLiftSm:
                 object_pose_wp,
                 des_object_pose_wp,
                 above_object_pose_wp,
-                below_goal_pose_wp,
+                above_goal_pose_wp,
                 self.des_ee_pose_wp,
                 self.des_gripper_state_wp,
                 self.offset_wp,
@@ -829,7 +769,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 4500: # 3000 episodes -> rlds = 17GB -> data collected = 53 GB
+    if next_num > 3000: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -850,21 +790,46 @@ def update_save_every_iterations(state):
         return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.LIFT_OBJECT:
         return SAVE_EVERY_ITERATIONS
-    elif state == PickSmState.PLACE_ON_GOAL:
+    elif state == PickSmState.PLACE_ABOVE_GOAL:
         return 2
-    elif state == PickSmState.PLACE_BELOW_GOAL:
+    elif state == PickSmState.PLACE_ON_GOAL:
         return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.RELEASE_OBJECT:
         return SAVE_EVERY_ITERATIONS
-    elif state == PickSmState.RETURN_HOME:
+    elif state == PickSmState.MOVE_ABOVE_GOAL:
+        return SAVE_EVERY_ITERATIONS
+    elif state == PickSmState.TERMINAL_STATE:
         return SAVE_EVERY_ITERATIONS
     else:
         return SAVE_EVERY_ITERATIONS
+    
+def get_sm_state(state):
+    if state == PickSmState.REST:
+        return "REST"
+    elif state == PickSmState.APPROACH_ABOVE_OBJECT:
+        return "APPROACH_ABOVE_OBJECT"
+    elif state == PickSmState.APPROACH_OBJECT:
+        return "APPROACH_OBJECT"
+    elif state == PickSmState.GRASP_OBJECT:
+        return "GRASP_OBJECT"
+    elif state == PickSmState.LIFT_OBJECT:
+        return "LIFT_OBJECT"
+    elif state == PickSmState.PLACE_ABOVE_GOAL:
+        return "PLACE_ABOVE_GOAL"
+    elif state == PickSmState.PLACE_ON_GOAL:
+        return "PLACE_ON_GOAL"
+    elif state == PickSmState.RELEASE_OBJECT:
+        return "RELEASE_OBJECT"
+    elif state == PickSmState.MOVE_ABOVE_GOAL:
+        return "MOVE_ABOVE_GOAL"
+    elif state == PickSmState.TERMINAL_STATE:
+        return "TERMINAL_STATE"
+    else:
+        return "UNKNOWN_STATE"
 
 def run_simulator(env, env_cfg, args_cli):
     ### Create the config file with the Global Parameters defined in the current run
     config = {
-        "PICK_AND_PLACE": PICK_AND_PLACE,
         "OPENVLA_INSTRUCTION": OPENVLA_INSTRUCTION,
         "CUBE_MULTICOLOR": CUBE_MULTICOLOR,
         "RANDOM_CAMERA": RANDOM_CAMERA,
@@ -873,7 +838,6 @@ def run_simulator(env, env_cfg, args_cli):
         "CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
         "CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
         "SAVE_EVERY_ITERATIONS": SAVE_EVERY_ITERATIONS,
-        "EULER_NOTATION": EULER_NOTATION,
     }
 
     # Create output directory
@@ -937,15 +901,10 @@ def run_simulator(env, env_cfg, args_cli):
     count = 0
     task_count = 0
     restarted = True
-    
 
-    printed = False
     while simulation_app.is_running():
 
-
-        # if not printed:
-        #     if PickSmState.REST != pick_sm.sm_state[0].item():
-        #         printed = True
+        # if pick_sm.sm_state[0].item() == PickSmState.REST:
         #     joint_pos = robot.data.joint_pos.clone()
         #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
         #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
@@ -958,10 +917,11 @@ def run_simulator(env, env_cfg, args_cli):
 
 
         save_every_iterations = update_save_every_iterations(pick_sm.sm_state[0].item())
+        print("STATE MACHINE STATE: ", get_sm_state(pick_sm.sm_state[0].item()))
 
 
 
-        if count % save_every_iterations == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST:
+        if count % save_every_iterations == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST and pick_sm.sm_state[0].item() != PickSmState.TERMINAL_STATE:
             table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
             wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
             # if count >= 10: # NOTE added ric to avoi saving too many images locally
@@ -1014,10 +974,10 @@ def run_simulator(env, env_cfg, args_cli):
 
             if restarted == True:
                 above_object_position = object_position.clone()
-                above_object_position[:, 2] += 0.1  # 10 cm sopra oggetto
+                above_object_position[:, 2] += 0.05  # 10 cm sopra oggetto
 
-                below_goal_position = desired_position.clone()
-                below_goal_position[:, 2] -= 0.18  # 10 cm sopra goal (dato che goal è già a +20 cm)
+                above_goal_position = desired_position.clone()
+                above_goal_position[:, 2] += 0.10  # a 20 cm sopra di altezza (il goal è a 0.02)
                 restarted = False
 
             # advance state machine
@@ -1026,7 +986,7 @@ def run_simulator(env, env_cfg, args_cli):
                 torch.cat([object_position, desired_orientation], dim=-1),
                 torch.cat([desired_position, desired_orientation], dim=-1),
                 torch.cat([above_object_position, desired_orientation], dim=-1),
-                torch.cat([below_goal_position, desired_orientation], dim=-1),
+                torch.cat([above_goal_position, desired_orientation], dim=-1),
             )
         
             dones = env.step(actions)[-2]
@@ -1035,7 +995,6 @@ def run_simulator(env, env_cfg, args_cli):
 
             # reset state machine
             if dones.any():
-                printed = False
                 # ^ Create the .npy file with the data of the current episode
                 if task_count != 0:
                     save_episode_stepwise(episode_data)
@@ -1067,18 +1026,17 @@ def run_simulator(env, env_cfg, args_cli):
                 goal_pose = env.unwrapped.command_manager.get_command("object_pose")
 
                 # Calcola posizione della box
-                if PICK_AND_PLACE:
-                    new_pos = goal_pose[..., :3].clone()
-                    new_pos[..., 2] = 0.0
+                new_pos = goal_pose[..., :3].clone()
+                new_pos[..., 2] = 0.0
 
-                    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
+                new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
 
-                    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
-                    root_state[:, 0:3] = new_pos
-                    root_state[:, 3:7] = new_rot
+                root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
+                root_state[:, 0:3] = new_pos
+                root_state[:, 3:7] = new_rot
 
-                    # Scrive la nuova pose alla simulazione
-                    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
+                # Scrive la nuova pose alla simulazione
+                env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
                 restarted = True
                 pick_sm.reset_idx(dones.nonzero(as_tuple=False).squeeze(-1))
@@ -1148,9 +1106,9 @@ def main():
     # Rimuovi marker dopo che l'ambiente li ha creati automaticamente
 
     env.reset()
-    if not VISUALIZE_MARKERS:   
-        hide_prim("/Visuals/Command/goal_pose")
-        hide_prim("/Visuals/Command/body_pose")
+
+    hide_prim("/Visuals/Command/goal_pose")
+    hide_prim("/Visuals/Command/body_pose")
 
     
 
