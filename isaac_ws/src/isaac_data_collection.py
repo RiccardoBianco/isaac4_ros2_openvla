@@ -44,7 +44,7 @@ INIT_OBJECT_POS = [0.5, 0, 0.055]
 CUBE_MULTICOLOR = False
 
 
-VISUALIZE_MARKERS = True
+VISUALIZE_MARKERS = False
 
 
 EULER_NOTATION = "zyx" # or 'xyz' 
@@ -829,7 +829,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 3000: 
+    if next_num > 4500: # 3000 episodes -> rlds = 17GB -> data collected = 53 GB
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -873,6 +873,7 @@ def run_simulator(env, env_cfg, args_cli):
         "CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
         "CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
         "SAVE_EVERY_ITERATIONS": SAVE_EVERY_ITERATIONS,
+        "EULER_NOTATION": EULER_NOTATION,
     }
 
     # Create output directory
@@ -942,17 +943,17 @@ def run_simulator(env, env_cfg, args_cli):
     while simulation_app.is_running():
 
 
-        if not printed:
-            if PickSmState.REST != pick_sm.sm_state[0].item():
-                printed = True
-            joint_pos = robot.data.joint_pos.clone()
-            print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
-            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
-            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
-            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+        # if not printed:
+        #     if PickSmState.REST != pick_sm.sm_state[0].item():
+        #         printed = True
+        #     joint_pos = robot.data.joint_pos.clone()
+        #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+        #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+        #     tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+        #     tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
 
-            print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
-            print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
+        #     print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+        #     print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
 
 
 

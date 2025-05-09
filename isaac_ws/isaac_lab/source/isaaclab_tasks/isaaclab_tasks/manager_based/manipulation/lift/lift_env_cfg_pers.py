@@ -29,24 +29,24 @@ from . import mdp
 
 # Object to Pick and Place 
 # Range is a DELTA from starting position of the object
-# OBJECT_X_RANGE = (-0.2, 0.2)
-# OBJECT_Y_RANGE = (-0.35, 0.35)
-# OBJECT_Z_RANGE = (0.0, 0.0)
-
-OBJECT_X_RANGE = (0.0, 0.0)
-OBJECT_Y_RANGE = (0.0, 0.0)
+OBJECT_X_RANGE = (-0.2, 0.2)
+OBJECT_Y_RANGE = (-0.35, 0.35)
 OBJECT_Z_RANGE = (0.0, 0.0)
+
+# OBJECT_X_RANGE = (0.0, 0.0)
+# OBJECT_Y_RANGE = (0.0, 0.0)
+# OBJECT_Z_RANGE = (0.0, 0.0)
 
 
 # Where to place the object
 # Range is a ABSOLUTE position of the goal
-# TARGET_X_RANGE = (0.3, 0.7)
-# TARGET_Y_RANGE = (-0.35, 0.35)
-# TARGET_Z_RANGE = (0.2, 0.2)
+TARGET_X_RANGE = (0.3, 0.7)
+TARGET_Y_RANGE = (-0.35, 0.35)
+TARGET_Z_RANGE = (0.2, 0.2)
 
-TARGET_X_RANGE = (0.4, 0.4)
-TARGET_Y_RANGE = (-0.35, -0.35)
-TARGET_Z_RANGE = (0.2, 0.2) # Must be 0 in OpenVLA inference script
+# TARGET_X_RANGE = (0.4, 0.4)
+# TARGET_Y_RANGE = (-0.35, -0.35)
+# TARGET_Z_RANGE = (0.2, 0.2) # Must be 0 in OpenVLA inference script
 
 
 @configclass
