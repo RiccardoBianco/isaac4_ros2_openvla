@@ -438,7 +438,7 @@ class PickSmWaitTime:
 
     PLACE_ABOVE_GOAL = wp.constant(0.1) # 0.1 molto fluido -> diretto al goal 
     # PLACE_ABOVE_GOAL = wp.constant(1.0) # per andare sopra al goal -> 0.1 per ignoare quello step
-    PLACE_ON_GOAL = wp.constant(0.6)
+    PLACE_ON_GOAL = wp.constant(1.0)
     
     RELEASE_OBJECT = wp.constant(0.3)
     MOVE_ABOVE_GOAL = wp.constant(0.5)
@@ -704,7 +704,7 @@ def take_image(camera_index, camera, camera_type, sim_num):
 
             low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
 
-            if sim_num <= 3:
+            if sim_num <= 10:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 file_name = f"{camera_type}_{timestamp}.png"
 
