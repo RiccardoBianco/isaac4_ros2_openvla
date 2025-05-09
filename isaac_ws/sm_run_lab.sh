@@ -1,1 +1,0 @@
- ~/IsaacLab/isaaclab.sh -p isaac_ws/src/isaac_data_collection.py --save --enable_cameras --headless

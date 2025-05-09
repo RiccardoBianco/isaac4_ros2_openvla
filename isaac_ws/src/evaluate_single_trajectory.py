@@ -90,9 +90,8 @@ import omni.replicator.core as rep
 from isaaclab_assets import FRANKA_PANDA_HIGH_PD_CFG, UR10_CFG  # isort:skip
 from isaaclab.sensors.camera import CameraCfg
 
-from pxr import Usd, UsdPhysics, UsdGeom, UsdShade
+from pxr import Usd, UsdPhysics, UsdGeom, UsdShade, PhysxSchema, Sdf, Gf, Tf
 import omni.usd
-
 
 # Apply patch for handling numpy arrays in JSON
 json_numpy.patch()
@@ -520,7 +519,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
 
 
-episode_path = "./isaac_ws/src/episode_0000.npy"
+episode_path = "./isaac_ws/src/output/episode_0000.npy"
 episode = np.load(episode_path, allow_pickle=True)
 current_step_index = 0
 
@@ -543,13 +542,74 @@ def get_next_ground_truth_action():
 
     # Ritorna il campo "action"
     return step
-    
+
+def bind_physx_material(prim, material_prim):
+    if not prim or not prim.IsValid():
+        print(f"[WARN] Invalid target prim for PhysX material.")
+        return
+    if not material_prim or not material_prim.IsValid():
+        print(f"[WARN] Invalid material prim.")
+        return
+
+    rel = prim.CreateRelationship("physxMaterial:binding")
+    rel.SetTargets([material_prim.GetPath()])
+
+def assign_friction():
+    stage = omni.usd.get_context().get_stage()
+
+    # --- Create PhysX physics material ---
+    physx_mat_path = "/World/Materials/PhysxHighFriction"
+    physx_mat_prim = stage.DefinePrim(physx_mat_path, "PhysicsMaterial")
+    physx_mat = UsdPhysics.MaterialAPI.Apply(physx_mat_prim)
+    physx_mat.CreateStaticFrictionAttr().Set(0.8)
+    physx_mat.CreateDynamicFrictionAttr().Set(0.7)
+    physx_mat.CreateRestitutionAttr().Set(0.8)
+
+    # --- Create a visual material with UsdPreviewSurface shader ---
+    visual_mat_path = "/World/Materials/VisualHighFriction"
+    visual_mat_prim = stage.DefinePrim(visual_mat_path, "Material")
+    visual_mat = UsdShade.Material(visual_mat_prim)
+
+    shader_path = visual_mat_path + "/Shader"
+    shader_prim = stage.DefinePrim(shader_path, "Shader")
+    shader = UsdShade.Shader(shader_prim)
+    shader.CreateIdAttr("UsdPreviewSurface")
+    shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(0.0, 0.0, 1.0))  # blue
+    shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.5)
+
+    shader_output = shader.CreateOutput("surface", Sdf.ValueTypeNames.Token)
+    visual_mat.CreateSurfaceOutput().ConnectToSource(shader_output)
+
+    # --- Prims to bind to ---
+    prim_paths = [
+        "/World/envs/env_0/Object",
+        "/World/Robot/panda_leftfinger",
+        "/World/Robot/panda_rightfinger",
+    ]
+
+    for path in prim_paths:
+        prim = stage.GetPrimAtPath(path)
+        if not prim.IsValid():
+            print(f"[Warning] Invalid prim at path: {path}")
+            continue
+
+        # Visual material for viewport
+        UsdShade.MaterialBindingAPI.Apply(prim).Bind(visual_mat)
+        # PhysX material for simulation
+        bind_physx_material(prim, physx_mat_prim)
+
+    print("[INFO] Friction and visual materials successfully assigned.")
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     """Runs the simulation loop."""
     # Extract scene entities
     # note: we only do this here for readability.
     robot = scene["robot"]
+
+    # robot.actuators["panda_hand"].effort_limit = 300
+    # robot.actuators["panda_hand"].stiffness = 6000
+    # robot.actuators["panda_hand"].damping = 10.0
+
     
     #######################
     # CAMERA STUFF - Start
@@ -626,7 +686,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     init_ee_pos = [3.7324736e-01,  1.6673391e-04,  4.3809804e-01] + quat_isaac
 
-    
+    gripper_res = 0.04
+
+    # Initialize the prev_end_effector pos and quat
+    ee_prev_pos = torch.tensor(init_ee_pos[:3], device=sim.device)
+    ee_prev_quat = torch.tensor(init_ee_pos[3:7], device=sim.device)
 
     # INIT JOINT POS [-2.9808e-05, -6.4019e-01, -8.9470e-06, -2.8247e+00,  2.5376e-05, 2.9797e+00,  7.4100e-01,  4.0000e-02,  4.0000e-02]
 
@@ -679,7 +743,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             diff_ik_controller.reset()
             diff_ik_controller.set_command(ik_commands)
             # set gripper position
-            gripper_pos_des = torch.tensor([[1.0, 1.0]], device=sim.device)
+            gripper_pos_des = torch.tensor([[0.04, 0.04]], device=sim.device)
 
 
         if goal_reached and count != 0:
@@ -704,9 +768,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 if res is None:
                     print("Error in sending request to OpenVLA.")
                     continue
-            # else:
+            else:
                 step = get_next_ground_truth_action()
-                #res = step["action"]
+                res = step["action"]
+                subtracted = False
                 gt_state = step["state"]
                 print("\nGT STATE: ", gt_state)
 
@@ -715,21 +780,29 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
             ############
             delta = res[:6] #
+            gripper_res = res[6]
             gripper_pos_des = torch.tensor([[res[6]*MAX_GRIPPER_POSE, res[6]*MAX_GRIPPER_POSE]], device=sim.device) #
 
             euler_orientation_pose = Rotation.from_quat(scalar_first_to_last(ee_quat_b.cpu().numpy().squeeze(0))).as_euler(EULER_NOTATION)
             ee_pose_eul = np.concatenate([ee_pos_b.cpu().numpy().squeeze(0), euler_orientation_pose, gripper_pos_des.cpu().numpy().squeeze(0)])
             
-            ee_goal = apply_delta(ee_pos_b.cpu().numpy().squeeze(0), ee_quat_b.cpu().numpy().squeeze(0), delta) #
+            # ^ We need to use the apply_delta with the last goal, because then the error is minimized
+            # ee_goal = apply_delta(ee_pos_b.cpu().numpy().squeeze(0), ee_quat_b.cpu().numpy().squeeze(0), delta.cpu().numpy()) #
+            ee_goal = apply_delta(ee_prev_pos.cpu().numpy(), ee_prev_quat.cpu().numpy(), delta)
+            ee_prev_pos = torch.tensor(ee_goal[:3], device=sim.device)
+            ee_prev_quat = torch.tensor(ee_goal[3:7], device=sim.device)
+
 
             euler_orientation_goal = Rotation.from_quat(scalar_first_to_last(ee_goal[3:7])).as_euler(EULER_NOTATION)
             ee_goal_eul = np.concatenate([ee_goal[:3], euler_orientation_goal, gripper_pos_des.cpu().numpy().squeeze(0)])
             recomputed_delta = compute_delta(ee_pose_eul, ee_goal_eul)
-            print("CURRENT STATE: ", ee_pose_eul, "\n")
-            print("\n\nDELTA position: ", delta[:3])
-            print("RECOMPUTED DELTA position: ", recomputed_delta[:3], "\n")
-            print("DELTA orientation: ", delta[3:6])
-            print("RECOMPUTED DELTA orientation: ", recomputed_delta[3:6], "\n\n")
+            # print("CURRENT STATE: ", ee_pose_eul, "\n")
+            # print("\n\nDELTA position: ", delta[:3])
+            # print("RECOMPUTED DELTA position: ", recomputed_delta[:3], "\n")
+            # print("DELTA orientation: ", delta[3:6])
+            # print("RECOMPUTED DELTA orientation: ", recomputed_delta[3:6], "\n\n")
+            # print("EE_GOAL_POS: ", ee_goal[:3], "\n")
+            # print("EE_GOAL_ORI: ", ee_goal[3:7], "\n")
             ###########
 
             # print(f"✅ Nuovo goal: {current_goal_idx}") #
@@ -758,14 +831,13 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             
             current_goal_idx = (current_goal_idx + 1) % len(ee_goal_deltas)
             
-
         # get current state
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         root_pose_w = robot.data.root_state_w[:, 0:7]
         joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
 
-        # posizione dell'end-effector relativa al root
+        # ^ posizione dell'end-effector relativa al root, computa nuove posizioni
         ee_pos_b, ee_quat_b = subtract_frame_transforms(
             root_pose_w[:, 0:3], root_pose_w[:, 3:7],
             ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
@@ -775,6 +847,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
         # apply actions
+        print("GRIPPER Pre processing: ", gripper_pos_des)
+
+        # if gripper_pos_des[:, 0] < 0.03 and not subtracted:
+        #     subtracted = True
+        #     gripper_pos_des[:, :] -= 0.0035
+        print("GRIPPER Post processing: ", gripper_pos_des)
+        print("GRIPPER JOINT :", robot.data.joint_pos[:, 7:9])
+        
         joint_pos_des = torch.cat((joint_pos_des, gripper_pos_des), dim=1).to(dtype=torch.float32)
         robot.set_joint_position_target(joint_pos_des, joint_ids=[0, 1, 2, 3, 4, 5, 6, 7, 8])
         scene.write_data_to_sim()
@@ -789,10 +869,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # update buffers
         scene.update(sim_dt)
 
-        goal_reached = check_goal_reached(ik_commands, ee_pose_w)
-        
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
+        gripper_state = robot.data.joint_pos[:, [7]]
 
+        goal_reached = check_goal_reached(ik_commands, ee_pose_w, gripper_state, gripper_res)
+        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
 
         # update marker positions 
         if VISUALIZE_MARKERS:
@@ -801,7 +881,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
      
 
-def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.00005, angle_threshold=0.001):
+def check_goal_reached(ik_commands, ee_pose_w, gripper_state, gripper_res, position_threshold=0.002, angle_threshold=0.004, gripper_threshold=0.002):
     goal_pos = ik_commands[:, 0:3]
     goal_quat = ik_commands[:, 3:7]
     current_pos = ee_pose_w[:, 0:3]
@@ -815,12 +895,17 @@ def check_goal_reached(ik_commands, ee_pose_w, position_threshold=0.00005, angle
     quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
     angle_error = 2 * torch.acos(quat_dot)
 
-    # controllo soglia
-    if position_error.item() < position_threshold and angle_error.item() < angle_threshold:
+    # Gripper Error
+    gripper_error = torch.abs(gripper_state - gripper_res)
+
+    # controllo soglia ALSO FOR GRIPPER
+    if position_error.item() < position_threshold and angle_error.item() < angle_threshold: #and gripper_error.item() < gripper_threshold:
         angle_deg = np.degrees(angle_error.item())
-        print(f"🎯 Goal raggiunto! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.2f}°")
+        print(f"🎯 Goal raggiunto! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
         return True
     
+    print(f"Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f} rad | Gripper err: {gripper_error.item():.4f} m")
+    print(f"Goal not reached yet. Continuing...")
     return False
 
 
@@ -830,21 +915,40 @@ def clear_img_folder():
             if file.startswith("rgb") and file.endswith(".png"):
                 os.remove(os.path.join("./isaac_ws/src/output/camera", file))
 
+
+class CustomSimulationCfg(sim_utils.SimulationCfg):
+    def __post_init__(self):
+        self.decimation = 2
+        self.episode_length_s = 6.0
+        self.dt = 0.01  # 100Hz
+        self.render_interval = self.decimation
+
+        self.physx.bounce_threshold_velocity = 0.01
+        self.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
+        self.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024
+        self.physx.friction_correlation_distance = 0.00625
+
+
 def main():
     """Main function."""
     clear_img_folder()
     # Load kit helper
-    sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
+    #sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
+    sim_cfg = CustomSimulationCfg(device=args_cli.device)
     sim = sim_utils.SimulationContext(sim_cfg)
     # Set main camera
-    sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
+    sim.set_camera_view([1.5, 1.5, 1.5], [0.0, 0.0, 0.0])
     # Design scene
     scene_cfg = TableTopSceneCfg(num_envs=args_cli.num_envs, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
+
+    # ^ Assign friction to object and robot fingers
+    assign_friction()
     # Play the simulator
     sim.reset()
     # Now we are ready!
     print("[INFO]: Setup complete...")
+
     # Run the simulator
     run_simulator(sim, scene)
 
