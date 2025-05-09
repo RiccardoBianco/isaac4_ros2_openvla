@@ -769,7 +769,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 3000: 
+    if next_num > 4500: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -917,7 +917,7 @@ def run_simulator(env, env_cfg, args_cli):
 
 
         save_every_iterations = update_save_every_iterations(pick_sm.sm_state[0].item())
-        print("STATE MACHINE STATE: ", get_sm_state(pick_sm.sm_state[0].item()))
+        # print("STATE MACHINE STATE: ", get_sm_state(pick_sm.sm_state[0].item()))
 
 
 
