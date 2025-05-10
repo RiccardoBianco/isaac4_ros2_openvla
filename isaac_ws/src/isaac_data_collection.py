@@ -827,6 +827,13 @@ def get_sm_state(state):
     else:
         return "UNKNOWN_STATE"
 
+def is_significant_change(delta, pos_th, rot_th, gripper_th):
+    dx, dy, dz, droll, dpitch, dyaw, gripper = delta
+    pos_change = np.linalg.norm([dx, dy, dz]) > pos_th
+    rot_change = np.linalg.norm([droll, dpitch, dyaw]) > rot_th
+    grip_change = abs(gripper) > gripper_th
+    return pos_change or rot_change or grip_change
+
 def run_simulator(env, env_cfg, args_cli):
     ### Create the config file with the Global Parameters defined in the current run
     config = {
@@ -948,7 +955,13 @@ def run_simulator(env, env_cfg, args_cli):
                 }
 
                 # Add step to episode_data
-                episode_data.append(step_data)
+                if len(episode_data) == 0:
+                    episode_data.append(step_data)
+                else:
+                    delta_steps = compute_delta(episode_data[-1]["state"], current_state) 
+                    if is_significant_change(delta_steps, pos_th=0.05, rot_th=0.1, gripper_th=0.01):
+                        episode_data.append(step_data)
+
 
         # run everything in inference mode
         with torch.inference_mode():
