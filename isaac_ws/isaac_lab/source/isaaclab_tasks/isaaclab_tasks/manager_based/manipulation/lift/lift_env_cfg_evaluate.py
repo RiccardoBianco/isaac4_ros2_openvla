@@ -49,7 +49,7 @@ if RANDOM_TARGET:
 else:  
     TARGET_X_RANGE = (0.4, 0.4)
     TARGET_Y_RANGE = (-0.35, -0.35)
-    TARGET_Z_RANGE = (0.2, 0.2) # Must be 0 in OpenVLA inference script
+    TARGET_Z_RANGE = (0.025, 0.025) # Must be 0 in OpenVLA inference script
 
 
 @configclass
@@ -243,7 +243,7 @@ class LiftEnvCfg(ManagerBasedRLEnvCfg):
         """Post initialization."""
         # general settings
         self.decimation = 2
-        self.episode_length_s = 30.0
+        self.episode_length_s = 10.0
         # simulation settings
         self.sim.dt = 0.01  # 100Hz
         self.sim.render_interval = self.decimation

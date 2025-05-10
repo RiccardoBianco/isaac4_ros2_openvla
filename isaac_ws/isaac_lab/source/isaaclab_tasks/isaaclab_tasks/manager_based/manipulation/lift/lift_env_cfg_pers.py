@@ -46,7 +46,7 @@ TARGET_Z_RANGE = (0.025, 0.025)
 
 # TARGET_X_RANGE = (0.4, 0.4)
 # TARGET_Y_RANGE = (-0.35, -0.35)
-# TARGET_Z_RANGE = (0.2, 0.2) # Must be 0 in OpenVLA inference script
+# TARGET_Z_RANGE = (0.025, 0.025) # Must be 0 in OpenVLA inference script
 
 
 @configclass

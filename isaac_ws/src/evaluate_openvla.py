@@ -15,11 +15,9 @@ CAMERA_POSITION = [1.2, -0.2, 0.8]
 CAMERA_TARGET = [0.0, 0.0, -0.3]
 
 INIT_OBJECT_POS = [0.5, 0, 0.055]
-
+INIT_TARGET_POS = [0.4, -0.35, 0.025]
 
 EULER_NOTATION = "zyx" 
-
-
 
 import argparse
 
@@ -187,7 +185,7 @@ def compute_delta(ee_pose, next_ee_pose):
     return delta
 
 
-def apply_delta(position, orientation, delta):
+def apply_delta(position, orientation, delta, env):
     """
     Apply a delta (in EE frame) to a pose in the world frame,
     using quaternions internally.
@@ -213,7 +211,9 @@ def apply_delta(position, orientation, delta):
     # Convert back to Isaac format (scalar-first)
     new_orientation = scalar_last_to_first(q_new.as_quat())
 
-    return np.concatenate([new_position, new_orientation])
+    ee_pose =  np.concatenate([new_position, new_orientation])
+    ee_pose = torch.tensor(ee_pose, device=env.unwrapped.device)
+    return ee_pose
 
 
 @configclass
@@ -232,7 +232,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             joint_names=["panda_joint.*"],
             body_name="panda_hand",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
-            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.0]), 
         )
 
         self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
@@ -315,7 +315,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 ),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
+                pos=INIT_TARGET_POS,  # OVERWRITTEN BY THE COMMANDER
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
@@ -421,12 +421,14 @@ def take_image(camera_index, camera):
 
     return None 
 
-def get_init_des_state():
+def get_init_des_state(env):
     quat = Rotation.from_euler(EULER_NOTATION, [-3.4807291e-02, 6.9246048e-01, 3.1373665e+00]).as_quat()
-    quat_isaac = scalar_last_to_first(quat)
-    init_ee_pose = [3.7324736e-01,  1.6673391e-04,  4.3809804e-01] + quat_isaac + [GripperState.OPEN]
-    torch.tensor([init_ee_pose]) # shape: (1, 8) -> x, y, z, qw, qx, qy, qz, gripper_state
-    return init_ee_pose
+
+    quat_isaac = torch.tensor(scalar_last_to_first(quat), device=env.unwrapped.device)
+    pos = torch.tensor([3.7324736e-01,  1.6673391e-04,  4.3809804e-01], device=env.unwrapped.device)
+    gripper = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+    init_ee_pose = torch.cat([pos, quat_isaac, gripper], dim=-1) # shape: (8,) -> x, y, z, qw, qx, qy, qz, gripper_state
+    return init_ee_pose.unsqueeze(0) # shape: (1, 8)
 
 def get_current_state(robot, env):
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
@@ -435,7 +437,7 @@ def get_current_state(robot, env):
         root_pose_w[:, 0:3], root_pose_w[:, 3:7],
         ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
-    current_gripper_state = robot.data.joint_state[:, -1]
+    current_gripper_state = robot.data.joint_pos.clone()[:, -1]
     if current_gripper_state < 0.03: # TODO fix this
         current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
     else:
@@ -478,17 +480,20 @@ current_step_index = 0
 def get_ground_truth_res():
     global current_step_index
     global episode
+    finished_episode = False
+    
 
     if current_step_index >= len(episode):
         print("No more steps available in the episode. Closing the simulation.")
-        simulation_app.close() 
+        finished_episode = True
+        return None, finished_episode
 
     step = episode[current_step_index]
     current_step_index += 1
+    return step["action"], finished_episode
 
-    return step["action"]
 
-def check_des_state_reached(current_state, desired_state, position_threshold=0.002, angle_threshold=0.004):
+def check_des_state_reached(current_state, desired_state, position_threshold, angle_threshold):
     """
         Check if the current position is within the threshold of the desired position.
         Returns True if the goal is reached, False otherwise.
@@ -496,13 +501,18 @@ def check_des_state_reached(current_state, desired_state, position_threshold=0.0
         state: [x, y, z, qw, qx, qy, qz, gripper_state]
 
     """
-    position_error = torch.norm(current_state[:3] - desired_state[:3], dim=1)
+    position_error = torch.norm(current_state[:, :3] - desired_state[:, :3], dim=1)
 
-    quat_dot = torch.abs(torch.sum(current_state[3:7] * desired_state[3:7], dim=1))  # q1 · q2
+    quat_dot = torch.abs(torch.sum(current_state[:, 3:7] * desired_state[:, 3:7], dim=1))  # q1 · q2
     quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
     angle_error = 2 * torch.acos(quat_dot)
 
-    gripper_correct = current_state[7] == desired_state[7]
+    # print("Position error: ", position_error.item())
+    # print("Angle error: ", angle_error.item())
+
+    gripper_correct = current_state[:, 7] == desired_state[:, 7]
+
+    # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
 
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
         angle_deg = np.degrees(angle_error.item())
@@ -541,61 +551,71 @@ def run_simulator(env, env_cfg, args_cli):
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
     actions[:, 3] = 1.0
     # desired object orientation (we only do position control of object)
-    desired_orientation = torch.zeros((env.unwrapped.num_envs, 4), device=env.unwrapped.device)
-    desired_orientation[:, 1] = 1.0
 
     assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
 
     count = 0
     task_count = 0
 
-    des_state = get_init_des_state()
-    ee_prev_pos = torch.tensor(des_state[:3], device=env.unwrapped.device)
-    ee_prev_quat = torch.tensor(des_state[3:7], device=env.unwrapped.device)
-    
+
     goal_reached = False
 
     while simulation_app.is_running():
 
         with torch.inference_mode():  
-            current_state = get_current_state(robot, env)
-            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.002, angle_threshold=0.004)
 
+            if count == 0:
+                des_state = get_init_des_state(env)
+                ee_prev_pos = torch.tensor(des_state[:, :3], device=env.unwrapped.device)
+                ee_prev_quat = torch.tensor(des_state[:, 3:7], device=env.unwrapped.device)
+                
+            # print("Getting curretn state...")
+            current_state = get_current_state(robot, env)
+            # print("Checking if goal is reached...")
+            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.015, angle_threshold=0.1)
+               
             
-            if goal_reached:
+            if goal_reached and count > 0:
+                print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
                     res = get_openvla_res(camera_index, camera)
+                    finished_episode = False
                     
                 else:
-                    res = get_ground_truth_res()
-
-                # take openvla or ground truth action -> apply it, get new des_state  
-                ee_des_pose = apply_delta(ee_prev_pos, ee_prev_quat, res)
-                ee_prev_pos = torch.tensor(ee_des_pose[:3], device=env.unwrapped.device)
-                ee_prev_quat = torch.tensor(ee_des_pose[3:7], device=env.unwrapped.device)
                 
-                if res[6] < 0.04:
-                    des_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
-                else:
-                    des_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
-                des_state = torch.cat(ee_des_pose, des_gripper_state.unsqueeze(-1), dim=-1) # (1, 8)
+                    res, finished_episode = get_ground_truth_res()
+
+                
+                if not finished_episode:
+                    ee_des_pose = apply_delta(ee_prev_pos[0].cpu().numpy(), ee_prev_quat[0].cpu().numpy(), res, env)
+                    ee_prev_pos = torch.tensor(ee_des_pose[:3], device=env.unwrapped.device).unsqueeze(0)
+                    ee_prev_quat = torch.tensor(ee_des_pose[3:7], device=env.unwrapped.device).unsqueeze(0)
+                    
+                    if res[6] < 0.039: # open = 0.04
+                        des_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+                    else:
+                        des_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+                
+                    des_state = torch.cat([ee_des_pose.unsqueeze(0), des_gripper_state.unsqueeze(0)], dim=-1) # (1, 8)
 
 
-            # print("\n\nActions: ", actions.cpu().numpy()) # shape: (1, 8) -> x, y, z, qw, qx, qy, qz, gripper_state
-            # print("Actions shape: ", actions.shape, "\n\n")
             dones = env.step(des_state)[-2]
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
 
 
             if dones.any():
+                print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
                     set_new_random_camera_pose(env, camera) # set the new random camera position in simulation
 
                 set_new_goal_pose(env) # set the new box (goal) position in simulation 
             
                 count = 0
+                global current_step_index
+                current_step_index = 0
                 task_count += 1
+
                 continue
 
             count += 1
@@ -615,7 +635,7 @@ def main():
     # create environment
     env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
     # reset environment at start
-    env.unwrapped.sim.set_camera_view([1.5, 1.5, 1.5], [0.0, 0.0, 0.0])
+    env.unwrapped.sim.set_camera_view([1.0, 1.5, 1.5], [0.2, 0.0, 0.0])
 
     env.reset()
 
