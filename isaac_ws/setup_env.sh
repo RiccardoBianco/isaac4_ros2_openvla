@@ -3,4 +3,5 @@
 /root/isaac_ws/isaac_lab/isaaclab.sh --install
 
 
-pip install json_numpy
+pip install json_numpy # /root/isaac_ws/isaac_lab/_isaac_sim/python.sh -m pip install json_numpy
+

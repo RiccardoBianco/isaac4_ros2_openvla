@@ -3,6 +3,7 @@ services:
     build: ./isaac_ws
     container_name: isaac-sim
     runtime: nvidia
+    working_dir: /root
     environment:
       - DISPLAY=${DISPLAY}
       - NVIDIA_DRIVER_CAPABILITIES=all

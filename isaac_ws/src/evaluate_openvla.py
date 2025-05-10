@@ -1,0 +1,630 @@
+OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
+OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
+OPENVLA_RESPONSE = False
+
+CUBE_MULTICOLOR = False
+RANDOM_CAMERA = False
+
+CAMERA_HEIGHT = 1920
+CAMERA_WIDTH = 1920
+OPENVLA_CAMERA_HEIGHT = 256
+OPENVLA_CAMERA_WIDTH = 256
+
+
+CAMERA_POSITION = [1.2, -0.2, 0.8]
+CAMERA_TARGET = [0.0, 0.0, -0.3]
+
+INIT_OBJECT_POS = [0.5, 0, 0.055]
+
+
+EULER_NOTATION = "zyx" 
+
+
+
+import argparse
+
+from isaaclab.app import AppLauncher
+
+# add argparse arguments
+parser = argparse.ArgumentParser(description="Pick and lift state machine for lift environments.")
+parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations.")
+parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
+parser.add_argument("--camera_id", type=int, choices={0, 1}, default=0, help=("The camera ID to use for displaying points or saving the camera data. Default is 0." " The viewport will always initialize with the perspective of camera 0."),)
+parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
+parser.add_argument("--anti_aliasing", type=int, default=3, help="Anti-aliasing level. Options: 0 (off), 1 (FXAA), 2 (TAA).")
+parser.add_argument("--save", action="store_true", default=False, help="Save the data from camera at index specified by ``--camera_id``.",)
+# append AppLauncher cli args
+AppLauncher.add_app_launcher_args(parser)
+# parse the arguments
+args_cli = parser.parse_args()
+
+# launch omniverse app
+app_launcher = AppLauncher(headless=args_cli.headless, enable_cameras=args_cli.enable_cameras)
+simulation_app = app_launcher.app
+
+"""Rest everything else."""
+
+import gymnasium as gym
+import torch
+from collections.abc import Sequence
+from PIL import Image
+
+
+import numpy as np
+import os
+import shutil
+from datetime import datetime
+import json
+from scipy.spatial.transform import Rotation
+
+from PIL import Image
+import json_numpy
+import yaml
+import requests
+
+from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
+
+
+from isaaclab.assets import RigidObjectCfg, AssetBaseCfg
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
+import isaaclab_tasks  # noqa: F401
+from isaaclab_tasks.manager_based.manipulation.lift import mdp
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_evaluate import LiftEnvCfg
+import isaaclab.sim as sim_utils
+import omni.replicator.core as rep
+from isaaclab.utils.math import subtract_frame_transforms
+##
+# Pre-defined configs
+##
+
+from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
+import omni.usd
+from isaaclab.sensors.camera import CameraCfg
+from isaaclab.utils import convert_dict_to_backend
+
+
+
+from pxr import UsdGeom, Usd, UsdShade
+
+from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
+from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
+from isaaclab.sim.spawners import UsdFileCfg
+
+##
+# Pre-defined configs
+##
+from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
+
+json_numpy.patch()
+
+def set_server_url():
+    # if user is "wanghan"
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+    if user == "wanghan":
+        server_url = "http://0.0.0.0:8000/act"
+    else:
+        print("Current working directory:", os.getcwd())
+
+        config_path = os.path.abspath("./isaac_ws/src/config.yaml")  # assuming you are in /root/isaac_ws folder
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        ip_address = config["ip_address"]
+        port = config["port"]
+        server_url = f'http://{ip_address}:{port}/act'
+        print(f"Server URL: {server_url}")
+
+    return server_url
+
+
+SERVER_URL = set_server_url()
+
+def send_request(payload):
+
+    # Send POST request to the server
+    response = requests.post(SERVER_URL, json=payload)
+
+    # Check the response
+    if response.status_code == 200:
+        print("Response from server:", response.json())
+        return response.json()
+    else:
+        print("Error:", response.status_code, response.text)
+        return None
+
+
+def scalar_first_to_last(q):
+    w, x, y, z = q
+    return [x, y, z, w]
+
+
+def scalar_last_to_first(q):
+    x, y, z, w = q
+    return [w, x, y, z]
+
+
+def compute_delta(ee_pose, next_ee_pose):
+    """
+    Compute the delta (expressed in EE frame) between two poses in the world frame,
+    using quaternions internally.
+    Input:
+        - ee_pose, next_ee_pose: arrays of shape (8,) containing
+            [x, y, z, roll, pitch, yaw, gripper_state]
+    Output:
+        - delta: array of shape (7,) containing
+            [dx, dy, dz, dr, dp, dy, new_gripper_state]
+    """
+    # Decompose inputs
+    pos1, rpy1, grip1 = ee_pose[:3], ee_pose[3:6], ee_pose[7]
+    pos2, rpy2, grip2 = next_ee_pose[:3], next_ee_pose[3:6], next_ee_pose[7]
+
+    # Convert to quaternions
+    q1 = Rotation.from_euler(EULER_NOTATION, rpy1)
+    q2 = Rotation.from_euler(EULER_NOTATION, rpy2)
+
+    # Translation delta in world frame
+    delta_pos_world = pos2 - pos1
+    # Express translation in EE frame
+    delta_pos_ee = q1.inv().apply(delta_pos_world)
+
+    # Rotation delta as quaternion
+    q_delta = q1.inv() * q2
+    # Convert back to Euler only for output
+    delta_euler = q_delta.as_euler(EULER_NOTATION)
+
+    # Gripper state
+    next_gripper = np.atleast_1d(grip2)
+
+    # Assemble final delta
+    delta = np.concatenate([delta_pos_ee, delta_euler, next_gripper]).astype(np.float32)
+    return delta
+
+
+def apply_delta(position, orientation, delta):
+    """
+    Apply a delta (in EE frame) to a pose in the world frame,
+    using quaternions internally.
+    Input:
+        - position: (x, y, z) world
+        - orientation: (w, x, y, z) quaternion world (scalar-first)
+        - delta: array (7,) [dx, dy, dz, dr, dp, dy, gripper]
+    Output:
+        - new_pose: array (7,) [x, y, z, qw, qx, qy, qz]
+    """
+    # Build current rotation
+    q_world = Rotation.from_quat(scalar_first_to_last(orientation))
+
+    # Translate in world using EE-frame delta
+    world_delta = q_world.apply(delta[:3])
+    new_position = position + world_delta
+
+    # Build rotation delta quaternion
+    q_delta = Rotation.from_euler(EULER_NOTATION, delta[3:6])
+    # Compose rotations
+    q_new = q_world * q_delta
+
+    # Convert back to Isaac format (scalar-first)
+    new_orientation = scalar_last_to_first(q_new.as_quat())
+
+    return np.concatenate([new_position, new_orientation])
+
+
+@configclass
+class FrankaCubeLiftEnvCfg(LiftEnvCfg):
+    def __post_init__(self):
+        # post init of parent
+        super().__post_init__()
+
+        # Set Franka as robot
+        # We switch here to a stiffer PD controller for IK tracking to be better.
+        self.scene.robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        # Set actions for the specific robot type (franka)
+        self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
+            asset_name="robot",
+            joint_names=["panda_joint.*"],
+            body_name="panda_hand",
+            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
+            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+        )
+
+        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["panda_finger.*"],
+            open_command_expr={"panda_finger_.*": 0.04},
+            close_command_expr={"panda_finger_.*": 0.0},
+        )
+
+                # Set the body name for the end effector
+        self.commands.object_pose.body_name = "panda_hand"
+
+
+        self.scene.plane = AssetBaseCfg(
+            prim_path="/World/defaultGroundPlane",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Environments/Terrains/flat_plane.usd", scale=(1.0, 1.0, 1.0), 
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+        )
+
+        self.scene.table = AssetBaseCfg(
+            prim_path="/World/Table",
+            spawn=sim_utils.UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
+        )
+        self.scene.light = AssetBaseCfg(
+            prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
+        )
+
+
+        if CUBE_MULTICOLOR:
+            self.scene.object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
+                spawn=UsdFileCfg(
+                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+                    scale=(0.7, 0.7, 0.7),
+                    rigid_props=RigidBodyPropertiesCfg(
+                        solver_position_iteration_count=16,
+                        solver_velocity_iteration_count=1,
+                        max_angular_velocity=1000.0,
+                        max_linear_velocity=1000.0,
+                        max_depenetration_velocity=5.0,
+                        disable_gravity=False,
+                    ),
+                ),
+            )
+        else: 
+            self.scene.object = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object",
+                spawn=sim_utils.CuboidCfg(
+                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
+
+        self.scene.box = RigidObjectCfg(
+            prim_path="/World/Box",
+            spawn=sim_utils.CuboidCfg(
+                size=(0.1, 0.1, 0.005),  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                    metallic=0.0
+                ),
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
+        
+
+                # Listens to the required transforms
+        marker_cfg = FRAME_MARKER_CFG.copy()
+        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_cfg.prim_path = "/Visuals/FrameTransformer"
+        self.scene.ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
+            debug_vis=False,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
+                    name="end_effector",
+                    offset=OffsetCfg(
+                        pos=[0.0, 0.0, 0.1034],
+                    ),
+                ),
+            ],
+        )
+
+
+        self.scene.camera = CameraCfg(
+            prim_path="/World/CameraSensor",
+            update_period=0,
+            height=CAMERA_HEIGHT,
+            width=CAMERA_WIDTH,
+            data_types=[
+                "rgb",
+            ],
+            colorize_semantic_segmentation=True,
+            colorize_instance_id_segmentation=True,
+            colorize_instance_segmentation=True,
+            spawn=sim_utils.PinholeCameraCfg(
+                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
+                focal_length=24.0,         # Wider view
+                focus_distance=400.0,     # Farther focus (everything is sharp)
+                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
+            ),
+        )
+
+
+
+class GripperState:
+    """States for the gripper."""
+    OPEN = 1.0
+    CLOSE = -1.0
+
+
+# NOTE ACTION = return torch.cat([des_ee_pose, self.des_gripper_state.unsqueeze(-1)], dim=-1)
+
+def assign_material(object_path, material_path):
+    stage = omni.usd.get_context().get_stage()
+
+    # Prendi la primitiva della tabella
+    object_prim = stage.GetPrimAtPath(object_path)
+    
+    # Prendi il materiale esistente
+    material_prim = stage.GetPrimAtPath(material_path)
+
+    if object_prim and material_prim:
+        material = UsdShade.Material(material_prim)
+        UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+        print("Materiale assegnato correttamente a ", object_path)
+    else:
+        print("Errore: Primitiva o materiale non trovati.")
+
+def hide_prim(prim_path: str):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+
+    if prim and prim.IsValid():
+        UsdGeom.Imageable(prim).MakeInvisible()
+        print(f"✅ Hidden prim: {prim_path}")
+    else:
+        print(f"⚠️ Prim '{prim_path}' not found or invalid.")
+
+
+def take_image(camera_index, camera):
+    """
+    Take an image from the camera and save it using the replicator writer.
+    Args:
+        camera_index: Index of the camera to use.
+        camera: The camera object.
+    """
+
+    # Save images from camera at camera_index
+    single_cam_data = convert_dict_to_backend(
+        {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
+    )
+    image_data = single_cam_data.get('rgb')
+
+    if image_data is not None:
+        image_data = image_data.astype(np.uint8)
+        high_res_image = Image.fromarray(image_data)
+
+        low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
+
+        return np.array(low_res_image)
+
+    return None 
+
+def get_init_des_state():
+    quat = Rotation.from_euler(EULER_NOTATION, [-3.4807291e-02, 6.9246048e-01, 3.1373665e+00]).as_quat()
+    quat_isaac = scalar_last_to_first(quat)
+    init_ee_pose = [3.7324736e-01,  1.6673391e-04,  4.3809804e-01] + quat_isaac + [GripperState.OPEN]
+    torch.tensor([init_ee_pose]) # shape: (1, 8) -> x, y, z, qw, qx, qy, qz, gripper_state
+    return init_ee_pose
+
+def get_current_state(robot, env):
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
+    root_pose_w = robot.data.root_state_w[:, 0:7]
+    ee_pos_b, ee_quat_b = subtract_frame_transforms(
+        root_pose_w[:, 0:3], root_pose_w[:, 3:7],
+        ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
+    )
+    current_gripper_state = robot.data.joint_state[:, -1]
+    if current_gripper_state < 0.03: # TODO fix this
+        current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+    else:
+        current_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+    
+    current_state = torch.cat([ee_pos_b, ee_quat_b, current_gripper_state.unsqueeze(-1)], dim=-1) # (1, 8)
+    return current_state
+
+def set_new_goal_pose(env):
+    goal_pose = env.unwrapped.command_manager.get_command("object_pose")
+    new_pos = goal_pose[..., :3].clone()
+    new_pos[..., 2] = 0.0
+    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
+
+    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
+    root_state[:, 0:3] = new_pos
+    root_state[:, 3:7] = new_rot
+    # Scrive la nuova pose alla simulazione
+    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
+
+def get_openvla_res(camera_index, camera):
+    image_array = take_image(camera_index, camera)
+    payload = {
+        "image": image_array,  # Sending as numpy array, no conversion to list
+        "instruction": OPENVLA_INSTRUCTION,
+        "unnorm_key": OPENVLA_UNNORM_KEY  # Add the unnorm_key to the payload
+    }
+    #Send request to the server
+    print("Sending request to OpenVLA...")
+    res = send_request(payload)
+    if res is None:
+        print("Error in sending request to OpenVLA.")
+        simulation_app.close()
+    return res
+
+
+episode_path = "./isaac_ws/src/output/episode_0000.npy"
+episode = np.load(episode_path, allow_pickle=True)
+current_step_index = 0
+def get_ground_truth_res():
+    global current_step_index
+    global episode
+
+    if current_step_index >= len(episode):
+        print("No more steps available in the episode. Closing the simulation.")
+        simulation_app.close() 
+
+    step = episode[current_step_index]
+    current_step_index += 1
+
+    return step["action"]
+
+def check_des_state_reached(current_state, desired_state, position_threshold=0.002, angle_threshold=0.004):
+    """
+        Check if the current position is within the threshold of the desired position.
+        Returns True if the goal is reached, False otherwise.
+        
+        state: [x, y, z, qw, qx, qy, qz, gripper_state]
+
+    """
+    position_error = torch.norm(current_state[:3] - desired_state[:3], dim=1)
+
+    quat_dot = torch.abs(torch.sum(current_state[3:7] * desired_state[3:7], dim=1))  # q1 · q2
+    quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
+    angle_error = 2 * torch.acos(quat_dot)
+
+    gripper_correct = current_state[7] == desired_state[7]
+
+    if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
+        angle_deg = np.degrees(angle_error.item())
+        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
+        return True
+    return False
+
+def set_new_random_camera_pose(env, camera):
+    # Base position
+    base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
+    
+    # Random offset in [-0.3, 0.3]
+    random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
+
+    # Final camera position
+    camera_positions = base_camera_position + random_offset
+    camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+    camera.set_world_poses_from_view(camera_positions, camera_targets)
+
+def run_simulator(env, env_cfg, args_cli):
+   
+    camera = env.unwrapped.scene["camera"]
+
+    robot = env.unwrapped.scene["robot"]
+
+    print("\n\nRUNNING SIMULATOR!\n\n")
+
+    # Set the camera position and target (wrist camera is already attached to the robot in the config)
+    camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
+    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+    camera.set_world_poses_from_view(camera_positions, camera_targets)
+    camera_index = args_cli.camera_id
+
+    # create action buffers (position + quaternion)
+    actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
+    actions[:, 3] = 1.0
+    # desired object orientation (we only do position control of object)
+    desired_orientation = torch.zeros((env.unwrapped.num_envs, 4), device=env.unwrapped.device)
+    desired_orientation[:, 1] = 1.0
+
+    assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
+
+    count = 0
+    task_count = 0
+
+    des_state = get_init_des_state()
+    ee_prev_pos = torch.tensor(des_state[:3], device=env.unwrapped.device)
+    ee_prev_quat = torch.tensor(des_state[3:7], device=env.unwrapped.device)
+    
+    goal_reached = False
+
+    while simulation_app.is_running():
+
+        with torch.inference_mode():  
+            current_state = get_current_state(robot, env)
+            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.002, angle_threshold=0.004)
+
+            
+            if goal_reached:
+                if OPENVLA_RESPONSE:
+                    res = get_openvla_res(camera_index, camera)
+                    
+                else:
+                    res = get_ground_truth_res()
+
+                # take openvla or ground truth action -> apply it, get new des_state  
+                ee_des_pose = apply_delta(ee_prev_pos, ee_prev_quat, res)
+                ee_prev_pos = torch.tensor(ee_des_pose[:3], device=env.unwrapped.device)
+                ee_prev_quat = torch.tensor(ee_des_pose[3:7], device=env.unwrapped.device)
+                
+                if res[6] < 0.04:
+                    des_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+                else:
+                    des_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+                des_state = torch.cat(ee_des_pose, des_gripper_state.unsqueeze(-1), dim=-1) # (1, 8)
+
+
+            # print("\n\nActions: ", actions.cpu().numpy()) # shape: (1, 8) -> x, y, z, qw, qx, qy, qz, gripper_state
+            # print("Actions shape: ", actions.shape, "\n\n")
+            dones = env.step(des_state)[-2]
+
+            camera.update(dt=env.unwrapped.sim.get_physics_dt())
+
+
+            if dones.any():
+                if RANDOM_CAMERA:
+                    set_new_random_camera_pose(env, camera) # set the new random camera position in simulation
+
+                set_new_goal_pose(env) # set the new box (goal) position in simulation 
+            
+                count = 0
+                task_count += 1
+                continue
+
+            count += 1
+
+    # close the environment
+    env.close()
+
+
+def main():
+
+    env_cfg = FrankaCubeLiftEnvCfg()
+    env_cfg.sim.device = args_cli.device
+    env_cfg.scene.num_envs = args_cli.num_envs
+    env_cfg.sim.use_fabric = not args_cli.disable_fabric
+
+    env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
+    # create environment
+    env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
+    # reset environment at start
+    env.unwrapped.sim.set_camera_view([1.5, 1.5, 1.5], [0.0, 0.0, 0.0])
+
+    env.reset()
+
+    hide_prim("/Visuals/Command/goal_pose")
+    hide_prim("/Visuals/Command/body_pose")
+
+    run_simulator(env, env_cfg, args_cli)
+    
+
+if __name__ == "__main__":
+    main()
+    simulation_app.close()
