@@ -278,7 +278,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             self.scene.object = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Object",
                 spawn=sim_utils.CuboidCfg(
-                    size=(0.04, 0.04, 0.04),  # Dimensioni del cubo
+                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
@@ -787,7 +787,7 @@ def update_save_every_iterations(state):
     elif state == PickSmState.APPROACH_OBJECT:
         return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.GRASP_OBJECT:
-        return SAVE_EVERY_ITERATIONS
+        return 3
     elif state == PickSmState.LIFT_OBJECT:
         return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.PLACE_ABOVE_GOAL:
@@ -795,9 +795,9 @@ def update_save_every_iterations(state):
     elif state == PickSmState.PLACE_ON_GOAL:
         return SAVE_EVERY_ITERATIONS
     elif state == PickSmState.RELEASE_OBJECT:
-        return SAVE_EVERY_ITERATIONS
+        return 3
     elif state == PickSmState.MOVE_ABOVE_GOAL:
-        return SAVE_EVERY_ITERATIONS
+        return 3
     elif state == PickSmState.TERMINAL_STATE:
         return SAVE_EVERY_ITERATIONS
     else:
@@ -827,11 +827,14 @@ def get_sm_state(state):
     else:
         return "UNKNOWN_STATE"
 
-def is_significant_change(delta, pos_th, rot_th, gripper_th):
+def is_significant_change(delta, delta_gripper, pos_th, rot_th, gripper_th):
     dx, dy, dz, droll, dpitch, dyaw, gripper = delta
     pos_change = np.linalg.norm([dx, dy, dz]) > pos_th
+    # print("pos_change: ", pos_change)
     rot_change = np.linalg.norm([droll, dpitch, dyaw]) > rot_th
-    grip_change = abs(gripper) > gripper_th
+    # print("rot_change: ", rot_change)
+    grip_change = delta_gripper > gripper_th
+    # print("grip_change: ", grip_change)
     return pos_change or rot_change or grip_change
 
 def run_simulator(env, env_cfg, args_cli):
@@ -929,13 +932,7 @@ def run_simulator(env, env_cfg, args_cli):
 
 
         if count % save_every_iterations == 0 and task_count!=0 and not restarted and pick_sm.sm_state[0].item() != PickSmState.REST and pick_sm.sm_state[0].item() != PickSmState.TERMINAL_STATE:
-            table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
-            wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
-            # if count >= 10: # NOTE added ric to avoi saving too many images locally
-            #     if os.path.exists("./isaac_ws/src/output/camera"):
-            #         shutil.rmtree("./isaac_ws/src/output/camera")
-            #     os.mkdir("./isaac_ws/src/output/camera", exist_ok=True)
-
+            
             
             # joint_vel = robot.data.joint_vel.clone()
 
@@ -943,24 +940,36 @@ def run_simulator(env, env_cfg, args_cli):
             # print("Joint Velocity: ", joint_vel)
             if SAVE:
                 current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
-                
-                step_data = {
-                    "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),  # shape: (8,)
-                    "image": table_image_array.astype(np.uint8),
-                    "wrist_image": wrist_image_array.astype(np.uint8),
-                    "language_instruction": OPENVLA_INSTRUCTION,
-                    "object_pose": object_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                    "goal_pose": goal_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                    "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                }
 
-                # Add step to episode_data
+                should_save = False
+
                 if len(episode_data) == 0:
+                    should_save = True
+                else:
+                    
+                    delta_steps = compute_delta(episode_data[-1]["state"], current_state.clone().cpu().squeeze().numpy().astype(np.float32)) 
+                    delta_gripper = abs(episode_data[-1]["state"][-1] - current_state.clone().cpu().squeeze().numpy().astype(np.float32)[-1])
+                    should_save = is_significant_change(delta_steps, delta_gripper, pos_th=0.05, rot_th=0.05, gripper_th=0.013)
+
+
+                if should_save:
+                    print("Saving step")
+                    table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
+                    wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
+
+                    step_data = {
+                        "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),
+                        "image": table_image_array.astype(np.uint8),
+                        "wrist_image": wrist_image_array.astype(np.uint8),
+                        "language_instruction": OPENVLA_INSTRUCTION,
+                        "object_pose": object_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                        "goal_pose": goal_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                        "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
+                    }
+
                     episode_data.append(step_data)
                 else:
-                    delta_steps = compute_delta(episode_data[-1]["state"], current_state) 
-                    if is_significant_change(delta_steps, pos_th=0.05, rot_th=0.1, gripper_th=0.01):
-                        episode_data.append(step_data)
+                    print("Not saving step")
 
 
         # run everything in inference mode
