@@ -16,6 +16,7 @@ It uses the `warp` library to run the state machine in parallel on the GPU.
 
 OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 
+SEED = 42
 
 RANDOM_CAMERA = False
 
@@ -336,12 +337,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
-        
-
-
-
-
-
+    
 
                 # Listens to the required transforms
         marker_cfg = FRAME_MARKER_CFG.copy()
@@ -471,7 +467,7 @@ def infer_state_machine(
     state = sm_state[tid]
     # decide next state
     if state == PickSmState.REST:
-        des_ee_pose[tid] = ee_pose[tid]
+        des_ee_pose[tid] = ee_pose[tid] # ! TODO maybe change into a predefined pose
         gripper_state[tid] = GripperState.OPEN
         # wait for a while
         if sm_wait_time[tid] >= PickSmWaitTime.REST:
@@ -912,18 +908,35 @@ def run_simulator(env, env_cfg, args_cli):
     task_count = 0
     restarted = True
 
+    # observations
+    # -- end-effector frame
+    ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+    tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+    tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+
+    printed = False
     while simulation_app.is_running():
 
-        # if pick_sm.sm_state[0].item() == PickSmState.REST:
-        #     joint_pos = robot.data.joint_pos.clone()
-        #     print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
-        #     ee_frame_sensor = env.unwrapped.scene["ee_frame"]
-        #     tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
-        #     tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+        if pick_sm.sm_state[0].item() == PickSmState.REST:
+            joint_pos = robot.data.joint_pos.clone()
+            print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
 
-        #     print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
-        #     print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
+            print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+            print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
 
+        if pick_sm.sm_state[0].item() != PickSmState.REST and not printed:
+            printed = True
+            joint_pos = robot.data.joint_pos.clone()
+            print("\n\nREST JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
+            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
+            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
+            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+
+            print("REST POS: tcp_rest_position: ", tcp_rest_position) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
+            print("ORIENTATION POS: tcp_rest_orientation: ", tcp_rest_orientation) # [0.0086, 0.9218, 0.0204, 0.3871]
 
 
         save_every_iterations = update_save_every_iterations(pick_sm.sm_state[0].item())
@@ -977,11 +990,7 @@ def run_simulator(env, env_cfg, args_cli):
             # step environment
             
 
-            # observations
-            # -- end-effector frame
-            ee_frame_sensor = env.unwrapped.scene["ee_frame"]
-            tcp_rest_position = ee_frame_sensor.data.target_pos_w[..., 0, :].clone() - env.unwrapped.scene.env_origins
-            tcp_rest_orientation = ee_frame_sensor.data.target_quat_w[..., 0, :].clone()
+            
             # -- object frame
             object_data: RigidObjectData = env.unwrapped.scene["object"].data
             object_pose_to_save = object_data.root_state_w[:, 0:7].clone()
@@ -1017,6 +1026,7 @@ def run_simulator(env, env_cfg, args_cli):
 
             # reset state machine
             if dones.any():
+                printed = False
                 # ^ Create the .npy file with the data of the current episode
                 if task_count != 0:
                     save_episode_stepwise(episode_data)
@@ -1118,6 +1128,7 @@ def main():
     env_cfg.sim.device = args_cli.device
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
+    env_cfg.seed = SEED
 
     env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
     # create environment
