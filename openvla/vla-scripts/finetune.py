@@ -244,6 +244,20 @@ def finetune(cfg: FinetuneConfig) -> None:
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
 
+    # Resume optimizer and step if continuing from checkpoint
+    resume_training = cfg.vla_path != "openvla/openvla-7b"
+    training_state_path = Path(cfg.vla_path) / "training_state.pt"
+    starting_step = 0
+
+    if resume_training and training_state_path.exists():
+        print(f"Resuming optimizer and step from {training_state_path}")
+        state = torch.load(training_state_path, map_location="cpu")
+        optimizer.load_state_dict(state["optimizer"])
+        starting_step = state["step"]
+    else:
+        print("Starting training from scratch (no optimizer state restored)")
+
+
     # Create Action Tokenizer
     action_tokenizer = ActionTokenizer(processor.tokenizer)
 
@@ -380,7 +394,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             recent_l1_losses.append(action_l1_loss.item())
 
             # Compute gradient step index
-            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
+            gradient_step_idx = starting_step + batch_idx // cfg.grad_accumulation_steps
 
             # Compute smoothened train metrics
             #   =>> Equal to current step metrics when not using gradient accumulation
@@ -436,10 +450,15 @@ def finetune(cfg: FinetuneConfig) -> None:
                     merged_vla = PeftModel.from_pretrained(base_vla, adapter_dir)
                     merged_vla = merged_vla.merge_and_unload()
                     if distributed_state.is_main_process:
+                        training_state = {
+                            "optimizer": optimizer.state_dict(),
+                            "step": gradient_step_idx,
+                        }
+
                         if cfg.save_latest_checkpoint_only:
                             # Overwrite latest checkpoint
                             merged_vla.save_pretrained(run_dir)
-
+                            torch.save(training_state, run_dir / "training_state.pt")
                             print(f"Saved Model Checkpoint for Step {gradient_step_idx} at: {run_dir}")
                         else:
                             # Prepare to save checkpoint in new directory
@@ -452,8 +471,11 @@ def finetune(cfg: FinetuneConfig) -> None:
                             # Save processor and model weights to new directory
                             processor.save_pretrained(checkpoint_dir)
                             merged_vla.save_pretrained(checkpoint_dir)
+                            torch.save(training_state, checkpoint_dir / "training_state.pt")
 
                             print(f"Saved Model Checkpoint for Step {gradient_step_idx} at: {checkpoint_dir}")
+                
+
 
                 # Block on Main Process Checkpointing
                 dist.barrier()
