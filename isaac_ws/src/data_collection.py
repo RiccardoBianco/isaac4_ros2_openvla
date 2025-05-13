@@ -4,8 +4,8 @@ OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 SEED = 42
 
 RANDOM_CAMERA = False
-RANDOM_OBJECT = False
-RANDOM_TARGET = False
+RANDOM_OBJECT = True
+RANDOM_TARGET = True
 
 SAVE_EVERY_ITERATIONS = 6
 SAVE = True
