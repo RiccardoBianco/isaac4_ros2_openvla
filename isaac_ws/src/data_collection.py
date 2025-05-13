@@ -4,6 +4,8 @@ OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 SEED = 42
 
 RANDOM_CAMERA = False
+RANDOM_OBJECT = False
+RANDOM_TARGET = False
 
 SAVE_EVERY_ITERATIONS = 6
 SAVE = True
@@ -13,23 +15,50 @@ CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
 
-CAMERA_POSITION = [1.2, -0.2, 0.8]
-CAMERA_TARGET = [0.0, 0.0, -0.3]
+CAMERA_POSITION = [0.9, -0.16, 0.6]
+CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 
-INIT_OBJECT_POS = [0.5, 0, 0.0]
 
-CUBE_SIZE = [0.05, 0.05, 0.05]  # Dimensioni del cubo
 
-OFFSET_EE = CUBE_SIZE[2] / 2 + 0.107
+CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
+
+OFFSET_EE = CUBE_SIZE[2] / 2 - 0.01 + 0.107 # 0.01 settato a mano a naso
+ABOVE_TARGET_OFFSET = 0.15
+ABOVE_OBJECT_OFFSET = 0.15
+
+
+
+INIT_OBJECT_POS = [0.4, -0.1, 0.0]
+INIT_TARGET_POS = [0.4, 0.1, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_ROBOT_POS = [0.4, 0.0, 0.35]
+
+
+
+if RANDOM_TARGET: # ABSOLUTE POSITION
+    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+else:
+    TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (INIT_TARGET_POS[2], INIT_TARGET_POS[2])
+
+if RANDOM_OBJECT: # RELATIVE POSITION (TO INIT_OBJECT_POS)
+    OBJECT_X_RANGE = (-0.2, 0.2)
+    OBJECT_Y_RANGE = (-0.2, 0.2)
+    OBJECT_Z_RANGE = (0.0, 0.0)
+else:
+    OBJECT_X_RANGE = (0.0, 0.0)
+    OBJECT_Y_RANGE = (0.0, 0.0)
+    OBJECT_Z_RANGE = (0.0, 0.0) 
 
 
 CUBE_MULTICOLOR = False
 
 EULER_NOTATION = "zyx" 
 
-ABOVE_TARGET_OFFSET = 0.15
-ABOVE_OBJECT_OFFSET = 0.15
+
 
 import argparse
 
@@ -78,12 +107,14 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
+
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
 from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms
+from isaaclab.managers import SceneEntityCfg
 ##
 # Pre-defined configs
 ##
@@ -189,7 +220,13 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
                 # Set the body name for the end effector
-        self.commands.object_pose.body_name = "panda_hand"
+        self.commands.target_pose.body_name = "panda_hand"
+        self.commands.target_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=TARGET_X_RANGE, pos_y=TARGET_Y_RANGE, pos_z=TARGET_Z_RANGE, roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
+        )
+
+        self.events.reset_object_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+
 
         self.scene.plane = AssetBaseCfg(
             prim_path="/World/defaultGroundPlane",
@@ -260,7 +297,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 ),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=(0.5, 0.4, 0.0),  # OVERWRITTEN BY THE COMMANDER
+                pos=INIT_TARGET_POS,  # OVERWRITTEN BY THE COMMANDER
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
@@ -412,7 +449,7 @@ class StateMachine:
         target_pose = target_pose.clone()
         init_pose[:, 2] += OFFSET_EE
         initial_object_pose[:, 2] += OFFSET_EE
-        target_pose[:, 2] += OFFSET_EE 
+        target_pose[:, 2] += OFFSET_EE + 0.03
 
         
         quat_down = torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=initial_object_pose.device)  # shape [1, 4]
@@ -687,7 +724,7 @@ def set_new_random_camera_pose(env, camera):
     return camera_pose_to_save
 
 def set_new_target_pose(env):
-    goal_pose = env.unwrapped.command_manager.get_command("object_pose")
+    goal_pose = env.unwrapped.command_manager.get_command("target_pose")
     new_pos = goal_pose[..., :3].clone()
     new_pos[..., 2] = 0.0
     new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
@@ -761,7 +798,7 @@ def run_simulator(env, env_cfg, args_cli):
     restarted = True
 
 
-    robot_init_pose = torch.tensor([0.4, 0.0, 0.4, 0.0, 1.0, 0.0, 0.0], device=env.unwrapped.device).unsqueeze(0) # [x, y, z, qw, qx, qy, qz] # towards down
+    robot_init_pose = torch.tensor([INIT_ROBOT_POS[0], INIT_ROBOT_POS[1], INIT_ROBOT_POS[2]-OFFSET_EE, 0.0, 1.0, 0.0, 0.0], device=env.unwrapped.device).unsqueeze(0) # [x, y, z, qw, qx, qy, qz] # towards down
 
 
     printed = False
@@ -814,7 +851,7 @@ def run_simulator(env, env_cfg, args_cli):
                         "wrist_image": wrist_image_array.astype(np.uint8),
                         "language_instruction": OPENVLA_INSTRUCTION,
                         "object_pose": current_object_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "goal_pose": target_pose.clone().cpu().numpy().astype(np.float32),
+                        "target_pose": target_pose.clone().cpu().numpy().astype(np.float32),
                         "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
                     }
 
@@ -830,7 +867,7 @@ def run_simulator(env, env_cfg, args_cli):
             current_object_pose_to_save = env.unwrapped.scene["object"].data.root_state_w[:, 0:7].clone()
             if restarted == True:
                 initial_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone()
-                target_pose = env.unwrapped.command_manager.get_command("object_pose")[..., :7].clone()
+                target_pose = env.unwrapped.command_manager.get_command("target_pose")[..., :7].clone()
                 restarted = False
 
             # advance state machine

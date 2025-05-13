@@ -23,31 +23,6 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from . import mdp
 
-##
-# Scene definition
-##
-
-# Object to Pick and Place 
-# Range is a DELTA from starting position of the object
-OBJECT_X_RANGE = (-0.2, 0.2)
-OBJECT_Y_RANGE = (-0.35, 0.35)
-OBJECT_Z_RANGE = (0.0, 0.0)
-
-# OBJECT_X_RANGE = (0.0, 0.0)
-# OBJECT_Y_RANGE = (0.0, 0.0)
-# OBJECT_Z_RANGE = (0.0, 0.0)
-
-
-# Where to place the object
-# Range is a ABSOLUTE position of the goal
-TARGET_X_RANGE = (0.3, 0.7)
-TARGET_Y_RANGE = (-0.35, 0.35)
-TARGET_Z_RANGE = (0.025, 0.025)
-
-# TARGET_X_RANGE = (0.4, 0.4)
-# TARGET_Y_RANGE = (-0.35, -0.35)
-# TARGET_Z_RANGE = (0.025, 0.025) # Must be 0 in OpenVLA inference script
-
 
 @configclass
 class ObjectTableSceneCfg(InteractiveSceneCfg):
@@ -95,13 +70,14 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
     # ^ Define the position for the Target Object (Red Area)
-    object_pose = mdp.UniformPoseCommandCfg(
+    target_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,  # will be set by agent env cfg
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
+        # ranges=MISSING
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=TARGET_X_RANGE, pos_y=TARGET_Y_RANGE, pos_z=TARGET_Z_RANGE, roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
+            pos_x=(0.4, 0.4), pos_y=(-0.35, -0.35), pos_z=(0.05, 0.05), roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
         ),
     )
 
@@ -126,7 +102,7 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
-        target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"}) # GOAL POSE -> TARGET
+        target_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "target_pose"}) # GOAL POSE -> TARGET
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -150,8 +126,9 @@ class EventCfg:
     reset_object_position = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
+        # params=MISSING 
         params={
-            "pose_range": {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}, # OBJECT POSE -> CUBE
+            "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}, # OBJECT POSE -> CUBE
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object", body_names="Object"),
         },
@@ -169,13 +146,13 @@ class RewardsCfg:
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "target_pose"},
         weight=16.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "target_pose"},
         weight=5.0,
     )
 
