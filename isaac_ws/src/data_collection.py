@@ -31,7 +31,7 @@ ABOVE_OBJECT_OFFSET = 0.15
 
 INIT_OBJECT_POS = [0.4, -0.1, 0.0]
 INIT_TARGET_POS = [0.4, 0.1, 0.0]  # Z must be 0 in OpenVLA inference script
-INIT_ROBOT_POS = [0.4, 0.0, 0.35]
+INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 
 
@@ -398,7 +398,7 @@ class SmWaitTime:
 
 
 
-def check_des_state_reached(current_state, desired_state, position_threshold, angle_threshold):
+def check_pose_reached(current_state, desired_state, position_threshold, angle_threshold):
     """
         Check if the current position is within the threshold of the desired position.
         Returns True if the goal is reached, False otherwise.
@@ -449,7 +449,7 @@ class StateMachine:
         target_pose = target_pose.clone()
         init_pose[:, 2] += OFFSET_EE
         initial_object_pose[:, 2] += OFFSET_EE
-        target_pose[:, 2] += OFFSET_EE + 0.03
+        target_pose[:, 2] += OFFSET_EE 
 
         
         quat_down = torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=initial_object_pose.device)  # shape [1, 4]
@@ -466,49 +466,49 @@ class StateMachine:
         if self.sm_state == SmState.ROBOT_INIT_POSE:
             des_ee_pose = init_pose
             gripper_state = GripperState.OPEN
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.ROBOT_INIT_POSE:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.ROBOT_INIT_POSE:
                 self.sm_state = SmState.APPROACH_ABOVE_OBJECT
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.APPROACH_ABOVE_OBJECT:
             des_ee_pose = above_initial_object_pose
             gripper_state = GripperState.OPEN
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_ABOVE_OBJECT:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_ABOVE_OBJECT:
                 self.sm_state = SmState.APPROACH_OBJECT
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.APPROACH_OBJECT:
             des_ee_pose = initial_object_pose
             gripper_state = GripperState.OPEN
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_OBJECT:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_OBJECT:
                 self.sm_state = SmState.GRASP_OBJECT
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.GRASP_OBJECT:
             des_ee_pose = initial_object_pose
             gripper_state = GripperState.CLOSE
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.GRASP_OBJECT:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.GRASP_OBJECT:
                 self.sm_state = SmState.LIFT_OBJECT
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.LIFT_OBJECT:
             des_ee_pose = above_initial_object_pose
             gripper_state = GripperState.CLOSE
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.LIFT_OBJECT:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.LIFT_OBJECT:
                 self.sm_state = SmState.PLACE_ON_GOAL
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.PLACE_ON_GOAL:
             des_ee_pose = target_pose
             gripper_state = GripperState.CLOSE
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.PLACE_ON_GOAL:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.PLACE_ON_GOAL:
                 self.sm_state = SmState.RELEASE_OBJECT
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.RELEASE_OBJECT:
             des_ee_pose = target_pose
             gripper_state = GripperState.OPEN
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.RELEASE_OBJECT:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.RELEASE_OBJECT:
                 self.sm_state = SmState.MOVE_ABOVE_GOAL
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.MOVE_ABOVE_GOAL:
             des_ee_pose = above_target_pose
             gripper_state = GripperState.OPEN
-            if check_des_state_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.MOVE_ABOVE_GOAL:
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.MOVE_ABOVE_GOAL:
                 self.sm_state = SmState.TERMINAL_STATE
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.TERMINAL_STATE:
@@ -648,7 +648,7 @@ def update_save_every_iterations(state):
     elif state == SmState.APPROACH_OBJECT:
         return SAVE_EVERY_ITERATIONS
     elif state == SmState.GRASP_OBJECT:
-        return 3
+        return 2
     elif state == SmState.LIFT_OBJECT:
         return SAVE_EVERY_ITERATIONS
     elif state == SmState.PLACE_ABOVE_GOAL:
@@ -656,7 +656,7 @@ def update_save_every_iterations(state):
     elif state == SmState.PLACE_ON_GOAL:
         return SAVE_EVERY_ITERATIONS
     elif state == SmState.RELEASE_OBJECT:
-        return 3
+        return 2
     elif state == SmState.MOVE_ABOVE_GOAL:
         return 3
     elif state == SmState.TERMINAL_STATE:
@@ -798,7 +798,8 @@ def run_simulator(env, env_cfg, args_cli):
     restarted = True
 
 
-    robot_init_pose = torch.tensor([INIT_ROBOT_POS[0], INIT_ROBOT_POS[1], INIT_ROBOT_POS[2]-OFFSET_EE, 0.0, 1.0, 0.0, 0.0], device=env.unwrapped.device).unsqueeze(0) # [x, y, z, qw, qx, qy, qz] # towards down
+    robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device).unsqueeze(0) # (1, 7) ->  [x, y, z, qw, qx, qy, qz] # towards down
+    robot_init_pose[:, 2] -= OFFSET_EE
 
 
     printed = False
@@ -838,7 +839,7 @@ def run_simulator(env, env_cfg, args_cli):
                     
                     delta_steps = compute_delta(episode_data[-1]["state"], current_state.clone().cpu().squeeze().numpy().astype(np.float32)) 
                     delta_gripper = abs(episode_data[-1]["state"][-1] - current_state.clone().cpu().squeeze().numpy().astype(np.float32)[-1])
-                    should_save = is_significant_change(delta_steps, delta_gripper, pos_th=0.05, rot_th=0.05, gripper_th=0.013)
+                    should_save = is_significant_change(delta_steps, delta_gripper, pos_th=0.05, rot_th=0.05, gripper_th=0.023)
 
                 if should_save:
                     print("Saving step")

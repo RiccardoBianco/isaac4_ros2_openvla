@@ -1,45 +1,62 @@
-OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
-OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
+
 OPENVLA_RESPONSE = False
+GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0000.npy"
+
+
+
+
+OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
+OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 
 SEED = 42
 
-CUBE_MULTICOLOR = False
 RANDOM_CAMERA = False
+RANDOM_OBJECT = False
+RANDOM_TARGET = False
 
 CAMERA_HEIGHT = 1920
 CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
 
+CAMERA_POSITION = [0.9, -0.16, 0.6]
+CAMERA_TARGET = [0.4, 0.0, 0.0]
 
-CAMERA_POSITION = [1.2, -0.2, 0.8]
-CAMERA_TARGET = [0.0, 0.0, -0.3]
 
-# ^ Episode 0000 -> The first run does not work (bumps in the table apparently), then the second run works, but the third run does not work (WHAT???)
-INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]
-INIT_TARGET_POS = [0.4, -0.35, 0.02]
+CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
-# ^ Episode 0070 -> The first run last forever, it misses the cube and then stays still forever
-# INIT_OBJECT_POS = [6.3774508e-01, 3.9098401e-02, 1.2000014e-02]
-# INIT_TARGET_POS = [0.4975408, -0.03378763, 0.025]
 
-# ^ Episode 0360 -> The first run does not work, the second run for some reason has a different object / target position
-# INIT_OBJECT_POS = [4.8459515e-01, 2.9040238e-01, 1.1999964e-02]
-# INIT_TARGET_POS = [0.6664577, 0.02375801, 0.025]
+INIT_OBJECT_POS = [0.4, -0.1, 0.0]
+INIT_TARGET_POS = [0.4, 0.1, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
-# ^ Episode 0427
-INIT_OBJECT_POS = [4.1326827e-01, -2.5065657e-01, 1.2000016e-02]
-INIT_TARGET_POS = [0.5129146, -0.01917678, 0.025]
 
-# ^ Episode 0502
-# INIT_OBJECT_POS = [4.4802216e-01, -2.8394589e-02, 1.2000023e-02]
-# INIT_TARGET_POS = [0.31775007, 0.07792005, 0.025]
+if RANDOM_TARGET: # ABSOLUTE POSITION
+    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+else:
+    TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (INIT_TARGET_POS[2], INIT_TARGET_POS[2])
 
-# INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]#[0.5, 0, 0.055]
-# INIT_TARGET_POS = [0.4, -0.35, 0.02]#[0.4, -0.35, 0.025]
+if RANDOM_OBJECT: # RELATIVE POSITION (TO INIT_OBJECT_POS)
+    OBJECT_X_RANGE = (-0.2, 0.2)
+    OBJECT_Y_RANGE = (-0.2, 0.2)
+    OBJECT_Z_RANGE = (0.0, 0.0)
+else:
+    OBJECT_X_RANGE = (0.0, 0.0)
+    OBJECT_Y_RANGE = (0.0, 0.0)
+    OBJECT_Z_RANGE = (0.0, 0.0) 
+
+
+CUBE_MULTICOLOR = False
 
 EULER_NOTATION = "zyx" 
+
+
+
+
 
 import argparse
 
@@ -96,7 +113,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_evaluate import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms
@@ -266,7 +283,13 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
                 # Set the body name for the end effector
-        self.commands.object_pose.body_name = "panda_hand"
+        self.commands.target_pose.body_name = "panda_hand"
+        self.commands.target_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=TARGET_X_RANGE, pos_y=TARGET_Y_RANGE, pos_z=TARGET_Z_RANGE, roll=(0.0, 0.0), pitch=(0.0, 0.0), yaw=(0.0, 0.0)
+        )
+
+        self.events.reset_object_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+
 
 
         self.scene.plane = AssetBaseCfg(
@@ -310,7 +333,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             self.scene.object = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Object",
                 spawn=sim_utils.CuboidCfg(
-                    size=(0.05, 0.05, 0.05),  # Dimensioni del cubo
+                    size=CUBE_SIZE,  # Dimensioni del cubo
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
@@ -391,8 +414,6 @@ class GripperState:
     CLOSE = -1.0
 
 
-# NOTE ACTION = return torch.cat([des_ee_pose, self.des_gripper_state.unsqueeze(-1)], dim=-1)
-
 def assign_material(object_path, material_path):
     stage = omni.usd.get_context().get_stage()
 
@@ -445,12 +466,9 @@ def take_image(camera_index, camera):
     return None 
 
 def get_init_des_state(env):
-    quat = Rotation.from_euler(EULER_NOTATION, [-3.4807291e-02, 6.9246048e-01, 3.1373665e+00]).as_quat()
-
-    quat_isaac = torch.tensor(scalar_last_to_first(quat), device=env.unwrapped.device)
-    pos = torch.tensor([3.7324736e-01,  1.6673391e-04,  4.3809804e-01], device=env.unwrapped.device)
+    robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device)
     gripper = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
-    init_ee_pose = torch.cat([pos, quat_isaac, gripper], dim=-1) # shape: (8,) -> x, y, z, qw, qx, qy, qz, gripper_state
+    init_ee_pose = torch.cat([robot_init_pose, gripper], dim=-1) # shape: (8,) -> x, y, z, qw, qx, qy, qz, gripper_state
     return init_ee_pose.unsqueeze(0) # shape: (1, 8)
 
 def get_current_state(robot, env):
@@ -470,7 +488,7 @@ def get_current_state(robot, env):
     return current_state
 
 def set_new_goal_pose(env):
-    goal_pose = env.unwrapped.command_manager.get_command("object_pose")
+    goal_pose = env.unwrapped.command_manager.get_command("target_pose")
     new_pos = goal_pose[..., :3].clone()
     new_pos[..., 2] = 0.0
     new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
@@ -497,8 +515,8 @@ def get_openvla_res(camera_index, camera):
     return res
 
 
-episode_path = "./isaac_ws/src/output/episode_0000.npy"
-episode = np.load(episode_path, allow_pickle=True)
+
+episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
 current_step_index = 0
 def get_ground_truth_res():
     global current_step_index
@@ -556,7 +574,7 @@ def set_new_random_camera_pose(env, camera):
     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
 
-def run_simulator(env, env_cfg, args_cli):
+def run_simulator(env, args_cli):
    
     camera = env.unwrapped.scene["camera"]
 
@@ -595,7 +613,7 @@ def run_simulator(env, env_cfg, args_cli):
             # print("Getting curretn state...")
             current_state = get_current_state(robot, env)
             # print("Checking if goal is reached...")
-            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.015, angle_threshold=0.1)
+            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.001, angle_threshold=0.005)
                
             
             if goal_reached and count > 0:
@@ -614,7 +632,7 @@ def run_simulator(env, env_cfg, args_cli):
                     ee_prev_pos = torch.tensor(ee_des_pose[:3], device=env.unwrapped.device).unsqueeze(0)
                     ee_prev_quat = torch.tensor(ee_des_pose[3:7], device=env.unwrapped.device).unsqueeze(0)
                     
-                    if res[6] < 0.039: # open = 0.04
+                    if res[6] < 0.03: # open = 0.04
                         des_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
                     else:
                         des_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
@@ -667,7 +685,7 @@ def main():
     hide_prim("/Visuals/Command/goal_pose")
     hide_prim("/Visuals/Command/body_pose")
 
-    run_simulator(env, env_cfg, args_cli)
+    run_simulator(env, args_cli)
     
 
 if __name__ == "__main__":
