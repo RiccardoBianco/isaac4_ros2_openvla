@@ -621,6 +621,13 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     """
     # folder_name = "episodes"
     # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
+
+    # Check on the final state of the object wrt the target
+    distance_object_target = np.linalg.norm(episode_steps[-1]["object_pose"][:, :3] - episode_steps[-1]["target_pose"][:, :3])
+    if distance_object_target > 0.08:
+        print("Episode not saved: object is too far from the target.")
+        return
+            
     for i in range(len(episode_steps)-1):
         episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
         # print("Step: ", i)
@@ -646,31 +653,6 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     # Save
     np.save(filepath, episode_steps, allow_pickle=True)
     print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
-
-    
-def print_sm_state(state):
-    if state == SmState.ROBOT_INIT_POSE:
-        return "ROBOT_INIT_POSE"
-    elif state == SmState.APPROACH_ABOVE_OBJECT:
-        return "APPROACH_ABOVE_OBJECT"
-    elif state == SmState.APPROACH_OBJECT:
-        return "APPROACH_OBJECT"
-    elif state == SmState.GRASP_OBJECT:
-        return "GRASP_OBJECT"
-    elif state == SmState.LIFT_OBJECT:
-        return "LIFT_OBJECT"
-    elif state == SmState.PLACE_ABOVE_GOAL:
-        return "PLACE_ABOVE_GOAL"
-    elif state == SmState.PLACE_ON_GOAL:
-        return "PLACE_ON_GOAL"
-    elif state == SmState.RELEASE_OBJECT:
-        return "RELEASE_OBJECT"
-    elif state == SmState.MOVE_ABOVE_GOAL:
-        return "MOVE_ABOVE_GOAL"
-    elif state == SmState.TERMINAL_STATE:
-        return "TERMINAL_STATE"
-    else:
-        return "UNKNOWN_STATE"
 
     
 def is_significant_change(delta, grasped_bool_vec, pos_th, rot_th, sm_state):
