@@ -7,7 +7,6 @@ RANDOM_CAMERA = False
 RANDOM_OBJECT = True
 RANDOM_TARGET = True
 
-SAVE_EVERY_ITERATIONS = 6
 SAVE = True
 
 CAMERA_HEIGHT = 1920
@@ -390,8 +389,8 @@ class SmWaitTime:
     APPROACH_OBJECT = 0.6
     GRASP_OBJECT = 0.3
     LIFT_OBJECT = 0.5
-    PLACE_ABOVE_GOAL = 0.1 # 0.1 molto fluido -> diretto al goal 
-    PLACE_ON_GOAL = 1.0
+    PLACE_ABOVE_GOAL = 1.0 # 0.1 molto fluido -> diretto al goal 
+    PLACE_ON_GOAL = 0.6
     RELEASE_OBJECT = 0.3
     MOVE_ABOVE_GOAL = 0.5
     TERMINAL_STATE = 1.0 
@@ -414,7 +413,7 @@ def check_pose_reached(current_state, desired_state, position_threshold, angle_t
 
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold:
         angle_deg = np.degrees(angle_error.item())
-        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
+        # print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
         return True
     return False
 
@@ -491,6 +490,12 @@ class StateMachine:
             des_ee_pose = above_initial_object_pose
             gripper_state = GripperState.CLOSE
             if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.LIFT_OBJECT:
+                self.sm_state = SmState.PLACE_ABOVE_GOAL
+                self.sm_wait_time = 0.0
+        elif self.sm_state == SmState.PLACE_ABOVE_GOAL:
+            des_ee_pose = above_target_pose
+            gripper_state = GripperState.CLOSE
+            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.PLACE_ABOVE_GOAL:
                 self.sm_state = SmState.PLACE_ON_GOAL
                 self.sm_wait_time = 0.0
         elif self.sm_state == SmState.PLACE_ON_GOAL:
@@ -642,27 +647,6 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     np.save(filepath, episode_steps, allow_pickle=True)
     print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
 
-def update_save_every_iterations(state):
-    if state == SmState.APPROACH_ABOVE_OBJECT: 
-        return SAVE_EVERY_ITERATIONS
-    elif state == SmState.APPROACH_OBJECT:
-        return SAVE_EVERY_ITERATIONS
-    elif state == SmState.GRASP_OBJECT:
-        return 2
-    elif state == SmState.LIFT_OBJECT:
-        return SAVE_EVERY_ITERATIONS
-    elif state == SmState.PLACE_ABOVE_GOAL:
-        return 2
-    elif state == SmState.PLACE_ON_GOAL:
-        return SAVE_EVERY_ITERATIONS
-    elif state == SmState.RELEASE_OBJECT:
-        return 2
-    elif state == SmState.MOVE_ABOVE_GOAL:
-        return 3
-    elif state == SmState.TERMINAL_STATE:
-        return SAVE_EVERY_ITERATIONS
-    else:
-        return SAVE_EVERY_ITERATIONS
     
 def print_sm_state(state):
     if state == SmState.ROBOT_INIT_POSE:
@@ -688,15 +672,43 @@ def print_sm_state(state):
     else:
         return "UNKNOWN_STATE"
 
-def is_significant_change(delta, delta_gripper, pos_th, rot_th, gripper_th):
+    
+def is_significant_change(delta, grasped_bool_vec, pos_th, rot_th, sm_state):
+    grasp_start_saved, grasp_end_saved, release_start_saved, release_end_saved = grasped_bool_vec
+
+    updated_vec = grasped_bool_vec
+    if sm_state == SmState.GRASP_OBJECT:
+        if not grasp_start_saved:
+            updated_vec = [True, grasp_end_saved, release_start_saved, release_end_saved]
+            return True, updated_vec
+        else:
+            return False, updated_vec
+
+    elif sm_state == SmState.LIFT_OBJECT:
+        if grasp_start_saved and not grasp_end_saved:
+            updated_vec = [grasp_start_saved, True, release_start_saved, release_end_saved]
+            return True, updated_vec
+        else:
+            return False, updated_vec
+
+    elif sm_state == SmState.RELEASE_OBJECT:
+        if not release_start_saved:
+            updated_vec = [grasp_start_saved, grasp_end_saved, True, release_end_saved]
+            return True, updated_vec
+        else:
+            return False, updated_vec
+
+    elif sm_state == SmState.MOVE_ABOVE_GOAL:
+        if release_start_saved and not release_end_saved:
+            updated_vec = [grasp_start_saved, grasp_end_saved, release_start_saved, True]
+            return True, updated_vec
+
+
     dx, dy, dz, droll, dpitch, dyaw, gripper = delta
     pos_change = np.linalg.norm([dx, dy, dz]) > pos_th
-    # print("pos_change: ", pos_change)
     rot_change = np.linalg.norm([droll, dpitch, dyaw]) > rot_th
-    # print("rot_change: ", rot_change)
-    grip_change = delta_gripper > gripper_th
-    # print("grip_change: ", grip_change)
-    return pos_change or rot_change or grip_change
+    return pos_change or rot_change, updated_vec
+
 
 def get_current_ee(robot):
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
@@ -745,7 +757,6 @@ def save_config_file():
         "CAMERA_TARGET": CAMERA_TARGET,
         "CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
         "CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
-        "SAVE_EVERY_ITERATIONS": SAVE_EVERY_ITERATIONS,
     }
 
     # Create output directory
@@ -802,31 +813,10 @@ def run_simulator(env, env_cfg, args_cli):
     robot_init_pose[:, 2] -= OFFSET_EE
 
 
-    printed = False
+    grasped_bool_vec= (False, False, False, False)
     while simulation_app.is_running():
         
-        #########################
-        # NOTE Just to check -> to be removed
-        if not printed:
-            if sm.sm_state != SmState.ROBOT_INIT_POSE:
-                printed = True
-            joint_pos = robot.data.joint_pos.clone()
-            print("\n\nROBOT_INIT_POSE JOINT POSITION: ", joint_pos) #  [ 0.0000, -0.5690,  0.0000, -2.8100,  0.0000,  3.0370,  0.7410,  0.0400, 0.0400]
-            ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
-            root_pose_w = robot.data.root_state_w[:, 0:7]
-            ee_pos_b, ee_quat_b = subtract_frame_transforms(
-                root_pose_w[:, 0:3], root_pose_w[:, 3:7],
-                ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
-            )
-            print("ROBOT_INIT_POSE POS: ee_pos_b: ", ee_pos_b) # [ 4.4507e-01, -1.7705e-05,  4.0302e-01]
-            print("ORIENTATION POS: ee_quat_b: ", ee_quat_b) # [0.0086, 0.9218, 0.0204, 0.3871]
-
-        #########################
-
-        save_every_iterations = update_save_every_iterations(sm.sm_state)
-
-
-        if count % save_every_iterations == 0 and task_count!=0 and not restarted and sm.sm_state != SmState.ROBOT_INIT_POSE and sm.sm_state != SmState.TERMINAL_STATE:
+        if task_count!=0 and not restarted and sm.sm_state != SmState.ROBOT_INIT_POSE and sm.sm_state != SmState.TERMINAL_STATE:
             if SAVE:
 
                 current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
@@ -835,14 +825,14 @@ def run_simulator(env, env_cfg, args_cli):
 
                 if len(episode_data) == 0:
                     should_save = True
-                else:
-                    
+                else:   
                     delta_steps = compute_delta(episode_data[-1]["state"], current_state.clone().cpu().squeeze().numpy().astype(np.float32)) 
-                    delta_gripper = abs(episode_data[-1]["state"][-1] - current_state.clone().cpu().squeeze().numpy().astype(np.float32)[-1])
-                    should_save = is_significant_change(delta_steps, delta_gripper, pos_th=0.05, rot_th=0.05, gripper_th=0.023)
+                    # griper_state = current_state.clone().cpu().squeeze().numpy().astype(np.float32)[-1]
+
+                    should_save, grasped_bool_vec = is_significant_change(delta_steps,grasped_bool_vec, pos_th=0.08, rot_th=0.1, sm_state=sm.sm_state )
 
                 if should_save:
-                    print("Saving step")
+                    # print("Saving step")
                     table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
                     wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
 
@@ -858,7 +848,8 @@ def run_simulator(env, env_cfg, args_cli):
 
                     episode_data.append(step_data)
                 else:
-                    print("Not saving step")
+                    # print("Not saving step")
+                    pass
 
 
         # run everything in inference mode
@@ -885,8 +876,7 @@ def run_simulator(env, env_cfg, args_cli):
 
             # reset state machine
             if dones.any():
-                printed = False
-        
+                grasped_bool_vec = [False, False, False, False]
                 if task_count != 0:
                     save_episode_stepwise(episode_data)
                     episode_data = []
@@ -901,6 +891,7 @@ def run_simulator(env, env_cfg, args_cli):
                 sm.reset()
                 task_count += 1
                 continue
+
 
             count += 1
 

@@ -1,6 +1,6 @@
 
 OPENVLA_RESPONSE = False
-GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0000.npy"
+GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0002.npy"
 
 if OPENVLA_RESPONSE == False:
     import os
@@ -41,7 +41,7 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 if OPENVLA_RESPONSE:
     INIT_OBJECT_POS = [0.4, -0.1, 0.0]
-    INIT_TARGET_POS = [0.4, 0.1, 0.0]  # Z must be 0 in OpenVLA inference script
+    INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
 
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
@@ -129,7 +129,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_eval import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms
@@ -494,11 +494,11 @@ def get_current_state(robot, env):
         root_pose_w[:, 0:3], root_pose_w[:, 3:7],
         ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
-    current_gripper_state = robot.data.joint_pos.clone()[:, -1]
-    if current_gripper_state < 0.03: # TODO fix this
-        current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
-    else:
-        current_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+    current_gripper_state = robot.data.joint_pos.clone()[:, -1] 
+    # if current_gripper_state < 0.03: # TODO fix this
+    #     current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+    # else:
+    #     current_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
     
     current_state = torch.cat([ee_pos_b, ee_quat_b, current_gripper_state.unsqueeze(-1)], dim=-1) # (1, 8)
     return current_state
@@ -566,15 +566,18 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
 
     # print("Position error: ", position_error.item())
     # print("Angle error: ", angle_error.item())
-
-    gripper_correct = current_state[:, 7] == desired_state[:, 7]
+    if desired_state[:, 7] == GripperState.CLOSE:
+        gripper_correct = current_state[:, 7] <= CUBE_SIZE[1] / 2 + 0.001 
+    else:
+        gripper_correct = current_state[:, 7] >= 0.04 - 0.001
 
     # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
-
+    # angle_deg = np.degrees(angle_error.item())
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
-        angle_deg = np.degrees(angle_error.item())
-        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
+        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
         return True
+    else:
+        print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
     return False
 
 def set_new_random_camera_pose(env, camera):
@@ -608,8 +611,8 @@ def run_simulator(env, args_cli):
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
     actions[:, 3] = 1.0
     # desired object orientation (we only do position control of object)
-
     assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
+
 
     count = 0
     task_count = 0
@@ -629,7 +632,7 @@ def run_simulator(env, args_cli):
             # print("Getting curretn state...")
             current_state = get_current_state(robot, env)
             # print("Checking if goal is reached...")
-            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.001, angle_threshold=0.005)
+            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.0153, angle_threshold=0.05)
                
             
             if goal_reached and count > 0:
@@ -700,7 +703,7 @@ def main():
 
     hide_prim("/Visuals/Command/goal_pose")
     hide_prim("/Visuals/Command/body_pose")
-
+    
     run_simulator(env, args_cli)
     
 
