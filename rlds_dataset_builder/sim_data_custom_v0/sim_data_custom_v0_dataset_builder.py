@@ -55,10 +55,10 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                             dtype=np.float32,
                             doc='Object pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
                         ),
-                        'goal_pose': tfds.features.Tensor(
+                        'target_pose': tfds.features.Tensor(
                             shape=(7,),
                             dtype=np.float32,
-                            doc='Goal pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
+                            doc='Target pose, consists of [x, y, z, w, x, y, z].', # pos + quat in isaacsim notation
                         ),
                         'camera_pose': tfds.features.Tensor(
                             shape=(6,),
@@ -141,7 +141,7 @@ class SimDataCustomV0(tfds.core.GeneratorBasedBuilder):
                         'wrist_image': step['wrist_image'],
                         'state': step['state'],
                         'object_pose': step['object_pose'][0],
-                        'goal_pose': step['goal_pose'][0],
+                        'target_pose': step['target_pose'][0],
                         'camera_pose': step['camera_pose'][0],
                     },
                     'action': step['action'],

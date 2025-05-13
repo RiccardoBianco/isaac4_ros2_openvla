@@ -1,6 +1,33 @@
 OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_RESPONSE = False
+EPISODE_NUMBER = "0070" # ^ Specify which episode you want to use (to put inside output, not inside output/episodes)
+
+if OPENVLA_RESPONSE == False:
+    import os
+    import numpy as np
+    # Need to use an episode data
+    path = os.path.join(os.path.dirname(__file__), "output")
+
+    episode_path = os.path.join(path, f"episode_{EPISODE_NUMBER}.npy")
+
+    # Now get the positions
+    episode = np.load(episode_path, allow_pickle=True)
+
+    step = episode[0]
+
+    # Load data from the first step
+    if 'target_pose' in step:
+        INIT_TARGET_POS = step['target_pose'][0, :3]
+    else:
+        INIT_TARGET_POS = step['goal_pose'][0, :3] # TODO to remove after new data collection
+    
+    if 'object_pose' in step:
+        INIT_OBJECT_POS = step['object_pose'][0, :3]
+    
+    # Optional: load also the camera or other information
+
+
 
 SEED = 42
 
@@ -16,28 +43,28 @@ OPENVLA_CAMERA_WIDTH = 256
 CAMERA_POSITION = [1.2, -0.2, 0.8]
 CAMERA_TARGET = [0.0, 0.0, -0.3]
 
-# ^ Episode 0000 -> The first run does not work (bumps in the table apparently), then the second run works, but the third run does not work (WHAT???)
-INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]
-INIT_TARGET_POS = [0.4, -0.35, 0.02]
+# # ^ Episode 0000 -> The first run does not work (bumps in the table apparently), then the second run works, but the third run does not work (WHAT???)
+# INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]
+# INIT_TARGET_POS = [0.4, -0.35, 0.02]
 
-# ^ Episode 0070 -> The first run last forever, it misses the cube and then stays still forever
-# INIT_OBJECT_POS = [6.3774508e-01, 3.9098401e-02, 1.2000014e-02]
-# INIT_TARGET_POS = [0.4975408, -0.03378763, 0.025]
+# # ^ Episode 0070 -> The first run last forever, it misses the cube and then stays still forever
+# # INIT_OBJECT_POS = [6.3774508e-01, 3.9098401e-02, 1.2000014e-02]
+# # INIT_TARGET_POS = [0.4975408, -0.03378763, 0.025]
 
-# ^ Episode 0360 -> The first run does not work, the second run for some reason has a different object / target position
-# INIT_OBJECT_POS = [4.8459515e-01, 2.9040238e-01, 1.1999964e-02]
-# INIT_TARGET_POS = [0.6664577, 0.02375801, 0.025]
+# # ^ Episode 0360 -> The first run does not work, the second run for some reason has a different object / target position
+# # INIT_OBJECT_POS = [4.8459515e-01, 2.9040238e-01, 1.1999964e-02]
+# # INIT_TARGET_POS = [0.6664577, 0.02375801, 0.025]
 
-# ^ Episode 0427
-INIT_OBJECT_POS = [4.1326827e-01, -2.5065657e-01, 1.2000016e-02]
-INIT_TARGET_POS = [0.5129146, -0.01917678, 0.025]
+# # ^ Episode 0427
+# INIT_OBJECT_POS = [4.1326827e-01, -2.5065657e-01, 1.2000016e-02]
+# INIT_TARGET_POS = [0.5129146, -0.01917678, 0.025]
 
-# ^ Episode 0502
-# INIT_OBJECT_POS = [4.4802216e-01, -2.8394589e-02, 1.2000023e-02]
-# INIT_TARGET_POS = [0.31775007, 0.07792005, 0.025]
+# # ^ Episode 0502
+# # INIT_OBJECT_POS = [4.4802216e-01, -2.8394589e-02, 1.2000023e-02]
+# # INIT_TARGET_POS = [0.31775007, 0.07792005, 0.025]
 
-# INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]#[0.5, 0, 0.055]
-# INIT_TARGET_POS = [0.4, -0.35, 0.02]#[0.4, -0.35, 0.025]
+# # INIT_OBJECT_POS = [4.9983558e-01, -6.0742901e-04, 1.1999992e-02]#[0.5, 0, 0.055]
+# # INIT_TARGET_POS = [0.4, -0.35, 0.02]#[0.4, -0.35, 0.025]
 
 EULER_NOTATION = "zyx" 
 
@@ -266,7 +293,10 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
                 # Set the body name for the end effector
-        self.commands.object_pose.body_name = "panda_hand"
+        self.commands.target_pose.body_name = "panda_hand"
+
+        # ^ TODO Maybe try to set here the sampling_range and other parameters ?? (To have one file with all globals)
+
 
 
         self.scene.plane = AssetBaseCfg(
@@ -470,7 +500,7 @@ def get_current_state(robot, env):
     return current_state
 
 def set_new_goal_pose(env):
-    goal_pose = env.unwrapped.command_manager.get_command("object_pose")
+    goal_pose = env.unwrapped.command_manager.get_command("target_pose")
     new_pos = goal_pose[..., :3].clone()
     new_pos[..., 2] = 0.0
     new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
