@@ -1,6 +1,6 @@
 
 OPENVLA_RESPONSE = False
-GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0002.npy"
+GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_2341.npy"
 
 if OPENVLA_RESPONSE == False:
     import os
@@ -549,6 +549,58 @@ def get_ground_truth_res():
     current_step_index += 1
     return step["action"], finished_episode
 
+class ThresholdAdaptationState:
+    def __init__(self, default_threshold=0.005, max_stuck_steps=10):
+        self.default_threshold = default_threshold
+        self.max_stuck_steps = max_stuck_steps
+        self.position_threshold = default_threshold
+        self.prev_position_error = None
+        self.stuck_counter = 0
+        self.stuck_reference_error = None  # nuovo
+
+def adaptive_check_des_state_reached(current_state, desired_state, angle_threshold, adaptation_state):
+    """
+    Adaptive version of check_des_state_reached that updates position threshold
+    only if the position error remains within 1 mm of a fixed value for several steps.
+    """
+    position_error = torch.norm(current_state[:, :3] - desired_state[:, :3], dim=1).item()
+    
+    quat_dot = torch.abs(torch.sum(current_state[:, 3:7] * desired_state[:, 3:7], dim=1)).clamp(-1.0, 1.0)
+    angle_error = 2 * torch.acos(quat_dot).item()
+    
+    if desired_state[:, 7] == GripperState.CLOSE:
+        gripper_correct = current_state[:, 7] <= CUBE_SIZE[1] / 2 + 0.001
+    else:
+        gripper_correct = current_state[:, 7] >= 0.04 - 0.001
+
+    # Check se errore è bloccato entro ±1mm da quello iniziale
+    if adaptation_state.stuck_reference_error is None:
+        adaptation_state.stuck_reference_error = position_error
+        adaptation_state.stuck_counter = 1
+    elif abs(position_error - adaptation_state.stuck_reference_error) < 0.001:
+        adaptation_state.stuck_counter += 1
+    else:
+        adaptation_state.stuck_counter = 0
+        adaptation_state.stuck_reference_error = position_error
+        adaptation_state.position_threshold = adaptation_state.default_threshold
+
+    if adaptation_state.stuck_counter >= adaptation_state.max_stuck_steps:
+        adaptation_state.position_threshold = adaptation_state.stuck_reference_error + 0.002
+        print(f"[ADAPTIVE] Threshold adattata a {adaptation_state.position_threshold:.4f} m")
+        adaptation_state.stuck_counter = 0  # reset per evitare riadattamenti continui
+        adaptation_state.stuck_reference_error = None
+
+    adaptation_state.prev_position_error = position_error
+
+    if position_error < adaptation_state.position_threshold and angle_error < angle_threshold and gripper_correct:
+        print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        return True
+    else:
+        print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        return False
+
+
+
 
 def check_des_state_reached(current_state, desired_state, position_threshold, angle_threshold):
     """
@@ -616,6 +668,8 @@ def run_simulator(env, args_cli):
 
     count = 0
     task_count = 0
+    adaptation_state = ThresholdAdaptationState(default_threshold=0.005, max_stuck_steps=10)
+
 
 
     goal_reached = False
@@ -632,8 +686,9 @@ def run_simulator(env, args_cli):
             # print("Getting curretn state...")
             current_state = get_current_state(robot, env)
             # print("Checking if goal is reached...")
-            goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.0153, angle_threshold=0.05)
-               
+            # goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.0153, angle_threshold=0.05)
+            goal_reached = adaptive_check_des_state_reached(current_state, des_state, angle_threshold=0.05, adaptation_state=adaptation_state)
+
             
             if goal_reached and count > 0:
                 print("Goal reached: ", goal_reached)
