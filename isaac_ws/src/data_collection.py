@@ -26,7 +26,7 @@ USE_MULTI_CUBE = True
 SEED = 42
 
 RANDOM_CAMERA = False
-RANDOM_OBJECT = True
+RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
 SAVE = True
@@ -50,14 +50,14 @@ ABOVE_OBJECT_OFFSET = 0.15
 
 
 
-INIT_OBJECT_POS = [0.4, -0.1, 0.0]
-INIT_TARGET_POS = [0.4, 0.1, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_OBJECT_POS = [0.3, 0.0, 0.0]
+INIT_TARGET_POS = [0.45, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
+    TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
@@ -285,7 +285,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
 
         if USE_MULTI_CUBE:
             # Create the second cube (blue)
-            self.scene.second_cube = RigidObjectCfg(
+            self.scene.object2 = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Object2",
                 spawn=sim_utils.CuboidCfg(
                     size=CUBE_SIZE,  # Dimensioni del cubo
@@ -298,13 +298,13 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=INIT_OBJECT_POS+OFFSET_SECOND_CUBE,  
+                    pos=[INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]],  
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
 
             # Create the third cube (yellow)
-            self.scene.third_cube = RigidObjectCfg(
+            self.scene.object3 = RigidObjectCfg(
                 prim_path="{ENV_REGEX_NS}/Object3",
                 spawn=sim_utils.CuboidCfg(
                     size=CUBE_SIZE,  # Dimensioni del cubo
@@ -317,7 +317,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=INIT_OBJECT_POS+OFFSET_THIRD_CUBE,  # OVERWRITTEN BY THE COMMANDER
+                    pos=[INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1], INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]],  # OVERWRITTEN BY THE COMMANDER
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
