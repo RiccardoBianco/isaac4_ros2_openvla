@@ -1,6 +1,7 @@
 
 OPENVLA_RESPONSE = False
 GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_2341.npy"
+CONFIG_NAME = "config_20250513_205324.json"
 
 if OPENVLA_RESPONSE == False:
     import os
@@ -18,9 +19,29 @@ if OPENVLA_RESPONSE == False:
     
     # Optional: load also the camera or other information
 
+CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
+
+OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Adjusted position for the second cube
+OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Adjusted position for the third cube
+
+if CUBE_COLOR_STR== "green":
+    CUBE_COLOR = (0.0, 1.0, 0.0) 
+    SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+    THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
+elif CUBE_COLOR_STR== "blue":
+    CUBE_COLOR = (0.0, 0.0, 1.0)
+    SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
+    THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+elif CUBE_COLOR_STR== "yellow":
+    CUBE_COLOR = (1.0, 1.0, 0.0)
+    SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+    THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
-OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
+OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
+
+# & Multi Cube Setup
+USE_MULTI_CUBE = True
 
 SEED = 42
 
@@ -328,38 +349,59 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
 
-        if CUBE_MULTICOLOR:
-            self.scene.object = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object",
-                init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
-                spawn=UsdFileCfg(
-                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                    scale=(0.7, 0.7, 0.7),
-                    rigid_props=RigidBodyPropertiesCfg(
-                        solver_position_iteration_count=16,
-                        solver_velocity_iteration_count=1,
-                        max_angular_velocity=1000.0,
-                        max_linear_velocity=1000.0,
-                        max_depenetration_velocity=5.0,
-                        disable_gravity=False,
-                    ),
+        self.scene.object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=CUBE_COLOR,  # Colore rosso
+                    metallic=0.0
                 ),
-            )
-        else: 
-            self.scene.object = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object",
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
+        
+        if USE_MULTI_CUBE:
+            # Create the second cube (blue)
+            self.scene.object2 = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object2",
                 spawn=sim_utils.CuboidCfg(
                     size=CUBE_SIZE,  # Dimensioni del cubo
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
                     visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        diffuse_color=SECOND_CUBE_COLOR, # Colore blu
                         metallic=0.0
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    pos=[INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]],  
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
+
+            # Create the third cube (yellow)
+            self.scene.object3 = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object3",
+                spawn=sim_utils.CuboidCfg(
+                    size=CUBE_SIZE,  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=THIRD_CUBE_COLOR,  # Colore giallo
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=[INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1], INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]],  # OVERWRITTEN BY THE COMMANDER
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
@@ -381,6 +423,8 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
+
+
         
 
                 # Listens to the required transforms
@@ -739,6 +783,22 @@ def run_simulator(env, args_cli):
     env.close()
 
 
+def load_config(config_name = CONFIG_NAME):
+    # Load the configuration file
+    if config_name.endswith(".json"):
+        print("Loading config from JSON file...")
+        config_path = os.path.join(os.path.dirname(__file__), "output", config_name)
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        
+        # Change Globals according to the loaded config
+        for key, value in config.items():
+            if key in globals():
+                globals()[key] = value
+    else:
+        print("Not loading config from JSON file. Using default values.")
+
+
 def main():
 
     env_cfg = FrankaCubeLiftEnvCfg()
@@ -746,6 +806,8 @@ def main():
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
     env_cfg.seed = SEED
+
+    load_config()
 
     env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
     # create environment
