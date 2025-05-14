@@ -1,47 +1,59 @@
 
 OPENVLA_RESPONSE = False
 GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_2341.npy"
-CONFIG_NAME = "config_20250513_205324.json"
-
-if OPENVLA_RESPONSE == False:
-    import os
-    import numpy as np
-    # Need to use an episode data
-    # Now get the positions
-    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
-    step = episode[0]
-    # Load data from the first step
-    if 'target_pose' in step:
-        INIT_TARGET_POS = step['target_pose'][0, :3]
-
-    if 'object_pose' in step:
-        INIT_OBJECT_POS = step['object_pose'][0, :3]
-    
-    # Optional: load also the camera or other information
+CONFIG_NAME = "random_green_new_sm.json"
 
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
-OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Adjusted position for the second cube
-OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Adjusted position for the third cube
 
-if CUBE_COLOR_STR== "green":
-    CUBE_COLOR = (0.0, 1.0, 0.0) 
-    SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
-    THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
-elif CUBE_COLOR_STR== "blue":
-    CUBE_COLOR = (0.0, 0.0, 1.0)
-    SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
-    THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
-elif CUBE_COLOR_STR== "yellow":
-    CUBE_COLOR = (1.0, 1.0, 0.0)
-    SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
-    THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+USE_MULTI_CUBE = True
+
+if USE_MULTI_CUBE:
+    if CUBE_COLOR_STR== "green":
+        CUBE_COLOR = (0.0, 1.0, 0.0) 
+        SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+        THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
+        OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Blue cube offset
+        OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Yellow cube offset
+        INIT_OBJECT_POS = [0.35, 0.0, 0.0]
+    elif CUBE_COLOR_STR== "blue":
+        CUBE_COLOR = (0.0, 0.0, 1.0)
+        SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
+        THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+        OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
+        OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
+        INIT_OBJECT_POS = [0.35, 0.15, 0.0]
+    elif CUBE_COLOR_STR== "yellow":
+        CUBE_COLOR = (1.0, 1.0, 0.0)
+        SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+        THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+        OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
+        OFFSET_THIRD_CUBE = [0.0, 0.30, 0.0]  # Blue cube offset
+        INIT_OBJECT_POS = [0.35, -0.15, 0.0]
+    else:
+        raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
+else:
+    if OPENVLA_RESPONSE:
+        INIT_OBJECT_POS = [0.4, -0.1, 0.0]
+        INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
+    else:
+        import os
+        import numpy as np
+        # Need to use an episode data
+        # Now get the positions
+        episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+        step = episode[0]
+        # Load data from the first step
+        if 'target_pose' in step:
+            INIT_TARGET_POS = step['target_pose'][0, :3]
+
+        if 'object_pose' in step:
+            INIT_OBJECT_POS = step['object_pose'][0, :3]
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
 
-# & Multi Cube Setup
-USE_MULTI_CUBE = True
+
 
 SEED = 42
 
@@ -60,9 +72,7 @@ CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
-if OPENVLA_RESPONSE:
-    INIT_OBJECT_POS = [0.4, -0.1, 0.0]
-    INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
+
 
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
@@ -85,8 +95,6 @@ else:
     OBJECT_Y_RANGE = (0.0, 0.0)
     OBJECT_Z_RANGE = (0.0, 0.0) 
 
-
-CUBE_MULTICOLOR = False
 
 EULER_NOTATION = "zyx" 
 
