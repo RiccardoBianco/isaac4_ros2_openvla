@@ -1,7 +1,7 @@
 
 OPENVLA_RESPONSE = False
-GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_2341.npy"
-CONFIG_NAME = "random_green_new_sm.json"
+GT_EPISODE_PATH = "./isaac_ws/src/output/multicube_green/episode_0011.npy"
+CONFIG_NAME = "multicube_green.json"
 
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
@@ -32,23 +32,25 @@ if USE_MULTI_CUBE:
         INIT_OBJECT_POS = [0.35, -0.15, 0.0]
     else:
         raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
-else:
-    if OPENVLA_RESPONSE:
-        INIT_OBJECT_POS = [0.4, -0.1, 0.0]
-        INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
-    else:
-        import os
-        import numpy as np
-        # Need to use an episode data
-        # Now get the positions
-        episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
-        step = episode[0]
-        # Load data from the first step
-        if 'target_pose' in step:
-            INIT_TARGET_POS = step['target_pose'][0, :3]
 
-        if 'object_pose' in step:
-            INIT_OBJECT_POS = step['object_pose'][0, :3]
+if OPENVLA_RESPONSE and not USE_MULTI_CUBE:
+    INIT_OBJECT_POS = [0.4, -0.1, 0.0]
+    INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
+
+if not OPENVLA_RESPONSE:
+    import os
+    import numpy as np
+    # Need to use an episode data
+    # Now get the positions
+    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+    step = episode[0]
+    # Load data from the first step
+    if 'target_pose' in step:
+        INIT_TARGET_POS = step['target_pose'][0, :3]
+
+    if 'object_pose' in step:
+        INIT_OBJECT_POS = step['object_pose'][0, :3]
+
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
