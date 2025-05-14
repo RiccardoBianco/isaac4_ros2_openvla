@@ -1,5 +1,27 @@
 
-OPENVLA_INSTRUCTION = "Pick the green cube and place it on the red area. \n"
+CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
+
+OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Adjusted position for the second cube
+OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Adjusted position for the third cube
+
+if CUBE_COLOR_STR== "green":
+    CUBE_COLOR = (0.0, 1.0, 0.0) 
+    SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+    THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
+elif CUBE_COLOR_STR== "blue":
+    CUBE_COLOR = (0.0, 0.0, 1.0)
+    SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
+    THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+elif CUBE_COLOR_STR== "yellow":
+    CUBE_COLOR = (1.0, 1.0, 0.0)
+    SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+    THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+
+OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
+
+
+# & Multi Cube Setup
+USE_MULTI_CUBE = True
 
 SEED = 42
 
@@ -51,9 +73,6 @@ else:
     OBJECT_X_RANGE = (0.0, 0.0)
     OBJECT_Y_RANGE = (0.0, 0.0)
     OBJECT_Z_RANGE = (0.0, 0.0) 
-
-
-CUBE_MULTICOLOR = False
 
 EULER_NOTATION = "zyx" 
 
@@ -246,39 +265,59 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         )
 
-
-        if CUBE_MULTICOLOR:
-            self.scene.object = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object",
-                init_state=RigidObjectCfg.InitialStateCfg(pos=INIT_OBJECT_POS, rot=[1, 0, 0, 0]),
-                spawn=UsdFileCfg(
-                    usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                    scale=(0.7, 0.7, 0.7),
-                    rigid_props=RigidBodyPropertiesCfg(
-                        solver_position_iteration_count=16,
-                        solver_velocity_iteration_count=1,
-                        max_angular_velocity=1000.0,
-                        max_linear_velocity=1000.0,
-                        max_depenetration_velocity=5.0,
-                        disable_gravity=False,
-                    ),
+        self.scene.object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=CUBE_COLOR,  # Colore rosso
+                    metallic=0.0
                 ),
-            )
-        else: 
-            self.scene.object = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object",
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
+
+        if USE_MULTI_CUBE:
+            # Create the second cube (blue)
+            self.scene.second_cube = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object2",
                 spawn=sim_utils.CuboidCfg(
                     size=CUBE_SIZE,  # Dimensioni del cubo
                     rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
                     visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.0, 1.0, 0.0),  # Colore rosso
+                        diffuse_color=SECOND_CUBE_COLOR, # Colore blu
                         metallic=0.0
                     ),
                 ),
                 init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
+                    pos=INIT_OBJECT_POS+OFFSET_SECOND_CUBE,  
+                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                ),
+            )
+
+            # Create the third cube (yellow)
+            self.scene.third_cube = RigidObjectCfg(
+                prim_path="{ENV_REGEX_NS}/Object3",
+                spawn=sim_utils.CuboidCfg(
+                    size=CUBE_SIZE,  # Dimensioni del cubo
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=THIRD_CUBE_COLOR,  # Colore giallo
+                        metallic=0.0
+                    ),
+                ),
+                init_state=RigidObjectCfg.InitialStateCfg(
+                    pos=INIT_OBJECT_POS+OFFSET_THIRD_CUBE,  # OVERWRITTEN BY THE COMMANDER
                     rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
                 ),
             )
@@ -627,6 +666,11 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     if distance_object_target > 0.08:
         print("Episode not saved: object is too far from the target.")
         return
+    
+    distance_object_target_start = np.linalg.norm(episode_steps[0]["object_pose"][:, :3] - episode_steps[0]["target_pose"][:, :3])
+    if distance_object_target_start < 0.10:
+        print("Episode not saved: object is too close to the target at the start.")
+        return
             
     for i in range(len(episode_steps)-1):
         episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
@@ -733,12 +777,38 @@ def save_config_file():
         ### Create the config file with the Global Parameters defined in the current run
     config = {
         "OPENVLA_INSTRUCTION": OPENVLA_INSTRUCTION,
-        "CUBE_MULTICOLOR": CUBE_MULTICOLOR,
+        "SEED": SEED,
         "RANDOM_CAMERA": RANDOM_CAMERA,
+        "RANDOM_OBJECT": RANDOM_OBJECT,
+        "RANDOM_TARGET": RANDOM_TARGET,
+        "SAVE": SAVE,
+        "CAMERA_HEIGHT": CAMERA_HEIGHT,
+        "CAMERA_WIDTH": CAMERA_WIDTH,
+        "OPENVLA_CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
+        "OPENVLA_CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
         "CAMERA_POSITION": CAMERA_POSITION,
         "CAMERA_TARGET": CAMERA_TARGET,
-        "CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
-        "CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
+        "CUBE_SIZE": CUBE_SIZE,
+        "OFFSET_EE": OFFSET_EE,
+        "ABOVE_TARGET_OFFSET": ABOVE_TARGET_OFFSET,
+        "ABOVE_OBJECT_OFFSET": ABOVE_OBJECT_OFFSET,
+        "INIT_OBJECT_POS": INIT_OBJECT_POS,
+        "INIT_TARGET_POS": INIT_TARGET_POS,
+        "INIT_ROBOT_POSE": INIT_ROBOT_POSE,
+        "TARGET_X_RANGE": TARGET_X_RANGE,
+        "TARGET_Y_RANGE": TARGET_Y_RANGE,
+        "TARGET_Z_RANGE": TARGET_Z_RANGE,
+        "OBJECT_X_RANGE": OBJECT_X_RANGE,
+        "OBJECT_Y_RANGE": OBJECT_Y_RANGE,
+        "OBJECT_Z_RANGE": OBJECT_Z_RANGE,
+        "EULER_NOTATION": EULER_NOTATION,
+        "USE_MULTI_CUBE": USE_MULTI_CUBE,
+        "CUBE_COLOR": CUBE_COLOR,
+        "CUBE_COLOR_STR": CUBE_COLOR_STR,
+        "SECOND_CUBE_COLOR": SECOND_CUBE_COLOR,
+        "THIRD_CUBE_COLOR": THIRD_CUBE_COLOR,
+        "OFFSET_SECOND_CUBE": OFFSET_SECOND_CUBE,
+        "OFFSET_THIRD_CUBE": OFFSET_THIRD_CUBE,
     }
 
     # Create output directory
@@ -827,6 +897,11 @@ def run_simulator(env, env_cfg, args_cli):
                         "target_pose": target_pose.clone().cpu().numpy().astype(np.float32),
                         "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
                     }
+
+                    # Include additional object poses if using multiple cubes
+                    if USE_MULTI_CUBE:
+                        step_data["object2_pose"] = env.unwrapped.scene["object2"].data.root_state_w[:, 0:7].clone().cpu().numpy().astype(np.float32)
+                        step_data["object3_pose"] = env.unwrapped.scene["object3"].data.root_state_w[:, 0:7].clone().cpu().numpy().astype(np.float32)
 
                     episode_data.append(step_data)
                 else:
