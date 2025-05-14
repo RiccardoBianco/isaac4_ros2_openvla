@@ -1,21 +1,31 @@
 
-CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
 
-OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Adjusted position for the second cube
-OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Adjusted position for the third cube
+
 
 if CUBE_COLOR_STR== "green":
     CUBE_COLOR = (0.0, 1.0, 0.0) 
     SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
     THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
+    OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Blue cube offset
+    OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Yellow cube offset
+    INIT_OBJECT_POS = [0.35, 0.0, 0.0]
 elif CUBE_COLOR_STR== "blue":
     CUBE_COLOR = (0.0, 0.0, 1.0)
     SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
     THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+    OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
+    OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
+    INIT_OBJECT_POS = [0.35, 0.15, 0.0]
 elif CUBE_COLOR_STR== "yellow":
     CUBE_COLOR = (1.0, 1.0, 0.0)
     SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
     THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+    OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
+    OFFSET_THIRD_CUBE = [0.0, 0.30, 0.0]  # Blue cube offset
+    INIT_OBJECT_POS = [0.35, -0.15, 0.0]
+else:
+    raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
 
@@ -50,8 +60,8 @@ ABOVE_OBJECT_OFFSET = 0.15
 
 
 
-INIT_OBJECT_POS = [0.3, 0.0, 0.0]
-INIT_TARGET_POS = [0.45, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
+
+INIT_TARGET_POS = [0.55, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 
@@ -686,7 +696,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 4500: 
+    if next_num > 800: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
