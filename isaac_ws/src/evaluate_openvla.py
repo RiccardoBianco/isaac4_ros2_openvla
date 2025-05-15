@@ -1,12 +1,11 @@
 
-OPENVLA_RESPONSE = False
-GT_EPISODE_PATH = "./isaac_ws/src/output/multicube_green/episode_0011.npy"
-CONFIG_NAME = "multicube_green.json"
-
+OPENVLA_RESPONSE = True
+GT_EPISODE_PATH = "./isaac_ws/src/output/random_green/episode_0777.npy"
+CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 
-USE_MULTI_CUBE = True
+USE_MULTI_CUBE = False
 
 if USE_MULTI_CUBE:
     if CUBE_COLOR_STR== "green":
@@ -32,6 +31,13 @@ if USE_MULTI_CUBE:
         INIT_OBJECT_POS = [0.35, -0.15, 0.0]
     else:
         raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
+else:
+    if CUBE_COLOR_STR== "green":
+        CUBE_COLOR = (0.0, 1.0, 0.0)
+    elif CUBE_COLOR_STR== "blue":
+        CUBE_COLOR = (0.0, 0.0, 1.0)
+    elif CUBE_COLOR_STR== "yellow":
+        CUBE_COLOR = (1.0, 1.0, 0.0)
 
 if OPENVLA_RESPONSE and not USE_MULTI_CUBE:
     INIT_OBJECT_POS = [0.4, -0.1, 0.0]
@@ -57,11 +63,11 @@ OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red a
 
 
 
-SEED = 42
+SEED = 777
 
 RANDOM_CAMERA = False
-RANDOM_OBJECT = False
-RANDOM_TARGET = False
+RANDOM_OBJECT = True
+RANDOM_TARGET = True
 
 CAMERA_HEIGHT = 1920
 CAMERA_WIDTH = 1920
@@ -79,7 +85,7 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 
-if RANDOM_TARGET: # ABSOLUTE POSITION
+if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
@@ -88,7 +94,7 @@ else:
     TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (INIT_TARGET_POS[2], INIT_TARGET_POS[2])
 
-if RANDOM_OBJECT: # RELATIVE POSITION (TO INIT_OBJECT_POS)
+if RANDOM_OBJECT and OPENVLA_RESPONSE: # RELATIVE POSITION (TO INIT_OBJECT_POS)
     OBJECT_X_RANGE = (-0.2, 0.2)
     OBJECT_Y_RANGE = (-0.2, 0.2)
     OBJECT_Z_RANGE = (0.0, 0.0)
@@ -367,7 +373,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                 collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
                 visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=CUBE_COLOR,  # Colore rosso
+                    diffuse_color=tuple(CUBE_COLOR),  # Colore rosso
                     metallic=0.0
                 ),
             ),
@@ -387,7 +393,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
                     visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=SECOND_CUBE_COLOR, # Colore blu
+                        diffuse_color=tuple(SECOND_CUBE_COLOR), # Colore blu
                         metallic=0.0
                     ),
                 ),
@@ -406,7 +412,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                     mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
                     collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
                     visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=THIRD_CUBE_COLOR,  # Colore giallo
+                        diffuse_color=tuple(THIRD_CUBE_COLOR),  # Colore giallo
                         metallic=0.0
                     ),
                 ),
@@ -793,31 +799,31 @@ def run_simulator(env, args_cli):
     env.close()
 
 
-def load_config(config_name = CONFIG_NAME):
+def load_config(config_path = CONFIG_PATH):
     # Load the configuration file
-    if config_name.endswith(".json"):
+    if config_path.endswith(".json"):
         print("Loading config from JSON file...")
-        config_path = os.path.join(os.path.dirname(__file__), "output", config_name)
         with open(config_path, "r") as f:
             config = json.load(f)
         
         # Change Globals according to the loaded config
         for key, value in config.items():
-            if key in globals():
+            if key in globals() and key != "INIT_TARGET_POS" and key != "INIT_OBJECT_POS":
                 globals()[key] = value
     else:
         print("Not loading config from JSON file. Using default values.")
 
 
 def main():
+    
+    # load_config()
+
 
     env_cfg = FrankaCubeLiftEnvCfg()
     env_cfg.sim.device = args_cli.device
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
     env_cfg.seed = SEED
-
-    load_config()
 
     env_cfg.scene.ee_frame.visualizer_cfg.markers["frame"].enabled = False
     # create environment
