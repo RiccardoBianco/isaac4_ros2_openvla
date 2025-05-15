@@ -53,14 +53,8 @@ import argparse
 SERVER_SIDE_FOLDER = "server_side_images"
 DEFAULT_IMAGE_NAME = "received_image"
 BASE_MODEL = "openvla/openvla-7b"
-# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/openvla-7b+sim_data_custom_v0+b16+lr-0.0005+lora-r32+dropout-0.0--image_aug"
-# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/train_only_one_move"
-# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/openvla-7b+sim_data_custom_v0+b16+lr-0.0005+lora-r32+dropout-0.0"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/latest_model_20k_checkpoint"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/20250507_203526-image_aug"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/small_cube_no_check_delta_model_17500_imgaug_random"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/small_cube_no_check_delta_model_10000_imgaug_random"
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/big_cube_check_delta_no_imgaug_random"
+
+FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_green_noaug_PERFECT"
 
 OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path
 
