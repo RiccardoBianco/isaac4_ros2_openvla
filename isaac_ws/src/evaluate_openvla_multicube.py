@@ -173,7 +173,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_eval import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.env_eval_multicube import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms

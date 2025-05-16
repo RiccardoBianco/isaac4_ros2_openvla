@@ -1,8 +1,8 @@
 
 CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
 
-RANDOM_CAMERA = False
-RANDOM_OBJECT = False
+RANDOM_CAMERA = True
+RANDOM_OBJECT = True
 RANDOM_TARGET = True
 
 
@@ -30,8 +30,12 @@ elif CUBE_COLOR_STR== "yellow":
 else:
     raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
+
 if RANDOM_OBJECT:
     INIT_OBJECT_POS = [0.4, 0.0, 0.0]
+
+INIT_TARGET_POS = [0.4, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
 
@@ -45,7 +49,7 @@ CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
 
-CAMERA_POSITION = [0.9, -0.16, 0.6]
+CAMERA_POSITION = [1.0, -0.16, 0.6]
 CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 
@@ -60,8 +64,8 @@ ABOVE_OBJECT_OFFSET = 0.15
 
 
 
-INIT_TARGET_POS = [0.55, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
-INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
+
+
 
 CAMERA_X_RANGE = (-0.2, 0.2)
 CAMERA_Y_RANGE = (-0.2, 0.2)
@@ -69,8 +73,8 @@ CAMERA_Z_RANGE = (-0.2, 0.2)
 
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
@@ -78,8 +82,8 @@ else:
     TARGET_Z_RANGE = (INIT_TARGET_POS[2], INIT_TARGET_POS[2])
 
 if RANDOM_OBJECT: # RELATIVE POSITION (TO INIT_OBJECT_POS)
-    OBJECT_X_RANGE = (-0.2, 0.2)
-    OBJECT_Y_RANGE = (-0.2, 0.2)
+    OBJECT_X_RANGE = (-0.2, 0.3) # APPLIED TO EVERY CUBE
+    OBJECT_Y_RANGE = (-0.3, 0.3)
     OBJECT_Z_RANGE = (0.0, 0.0)
 else:
     OBJECT_X_RANGE = (0.0, 0.0)
@@ -140,7 +144,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg_pers import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.env_data_multicube import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms
@@ -256,6 +260,8 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
         self.events.reset_object_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+        self.events.reset_object2_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+        self.events.reset_object3_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
 
 
         self.scene.plane = AssetBaseCfg(
@@ -294,45 +300,50 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
+        if RANDOM_OBJECT:
+            second_cube_pos = INIT_OBJECT_POS
+            third_cube_pos = INIT_OBJECT_POS
+        else:
+            second_cube_pos = [INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]]
+            third_cube_pos = [INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]]
 
-        if USE_MULTI_CUBE:
-            # Create the second cube (blue)
-            self.scene.object2 = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object2",
-                spawn=sim_utils.CuboidCfg(
-                    size=CUBE_SIZE,  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=SECOND_CUBE_COLOR, # Colore blu
-                        metallic=0.0
-                    ),
+        # Create the second cube (blue)
+        self.scene.object2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object2",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=SECOND_CUBE_COLOR, # Colore blu
+                    metallic=0.0
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=[INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]],  
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=second_cube_pos,  
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
 
-            # Create the third cube (yellow)
-            self.scene.object3 = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object3",
-                spawn=sim_utils.CuboidCfg(
-                    size=CUBE_SIZE,  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=THIRD_CUBE_COLOR,  # Colore giallo
-                        metallic=0.0
-                    ),
+        # Create the third cube (yellow)
+        self.scene.object3 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object3",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=THIRD_CUBE_COLOR,  # Colore giallo
+                    metallic=0.0
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=[INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1], INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]],  # OVERWRITTEN BY THE COMMANDER
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=third_cube_pos,  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
 
         self.scene.box = RigidObjectCfg(
             prim_path="/World/Box",
@@ -844,8 +855,10 @@ def save_config_file():
         "OBJECT_X_RANGE": OBJECT_X_RANGE,
         "OBJECT_Y_RANGE": OBJECT_Y_RANGE,
         "OBJECT_Z_RANGE": OBJECT_Z_RANGE,
+        "CAMERA_X_RANGE": CAMERA_X_RANGE,
+        "CAMERA_Y_RANGE": CAMERA_Y_RANGE,
+        "CAMERA_Z_RANGE": CAMERA_Z_RANGE,
         "EULER_NOTATION": EULER_NOTATION,
-        "USE_MULTI_CUBE": USE_MULTI_CUBE,
         "CUBE_COLOR": CUBE_COLOR,
         "CUBE_COLOR_STR": CUBE_COLOR_STR,
         "SECOND_CUBE_COLOR": SECOND_CUBE_COLOR,
@@ -869,7 +882,24 @@ def save_config_file():
 
     print(f"✅ Config saved to: {config_file_path}")
 
+def check_valid_task(env):
+    object_pos = env.unwrapped.scene["object"].data.root_state_w[:, :3].clone()
+    object2_pos = env.unwrapped.scene["object2"].data.root_state_w[:, :3].clone()
+    object3_pos = env.unwrapped.scene["object3"].data.root_state_w[:, :3].clone()
+    target_pos = env.unwrapped.scene["box"].data.root_state_w[:, :3].clone()
+    distance_object_object2 = torch.norm(object_pos - object2_pos, dim=1)
+    distance_object_object3 = torch.norm(object_pos - object3_pos, dim=1)
+    distance_object_target = torch.norm(object_pos - target_pos, dim=1)
+    distance_object2_target = torch.norm(object2_pos - target_pos, dim=1)
+    distance_object3_target = torch.norm(object3_pos - target_pos, dim=1)
 
+    if distance_object_object2.item() < 0.065 or distance_object_object3.item() < 0.065:
+        print("Object too close to another object.")
+        return False
+    if distance_object_target.item() < 0.08 or distance_object2_target.item() < 0.08 or distance_object3_target.item() < 0.08:
+        print("Object too close to the target.")
+        return False
+    return True
 
 def run_simulator(env, env_cfg, args_cli):
 
@@ -909,9 +939,11 @@ def run_simulator(env, env_cfg, args_cli):
 
 
     grasped_bool_vec= (False, False, False, False)
+    valid_task = True
     while simulation_app.is_running():
         
-        if task_count!=0 and not restarted and sm.sm_state != SmState.ROBOT_INIT_POSE and sm.sm_state != SmState.TERMINAL_STATE:
+    
+        if valid_task and task_count!=0 and not restarted and sm.sm_state != SmState.ROBOT_INIT_POSE and sm.sm_state != SmState.TERMINAL_STATE:
             if SAVE:
 
                 current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
@@ -942,10 +974,6 @@ def run_simulator(env, env_cfg, args_cli):
                     }
 
                     # Include additional object poses if using multiple cubes
-                    if USE_MULTI_CUBE:
-                        step_data["object2_pose"] = env.unwrapped.scene["object2"].data.root_state_w[:, 0:7].clone().cpu().numpy().astype(np.float32)
-                        step_data["object3_pose"] = env.unwrapped.scene["object3"].data.root_state_w[:, 0:7].clone().cpu().numpy().astype(np.float32)
-
                     episode_data.append(step_data)
                 else:
                     # print("Not saving step")
@@ -955,7 +983,9 @@ def run_simulator(env, env_cfg, args_cli):
         # run everything in inference mode
         with torch.inference_mode():
             # step environment
-            
+            if count == 0:
+                valid_task = check_valid_task(env)
+                
             current_object_pose_to_save = env.unwrapped.scene["object"].data.root_state_w[:, 0:7].clone()
             if restarted == True:
                 initial_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone()
@@ -963,12 +993,18 @@ def run_simulator(env, env_cfg, args_cli):
                 restarted = False
 
             # advance state machine
-            des_pose = sm.get_des_pose(
-                get_current_ee(robot), # shape (1, 7)
-                robot_init_pose,       # shape (1, 7)
-                initial_object_pose,   # shape (1, 7)
-                target_pose            # shape (1, 7)
-            )
+            if valid_task:
+                des_pose = sm.get_des_pose(
+                    get_current_ee(robot), # shape (1, 7)
+                    robot_init_pose,       # shape (1, 7)
+                    initial_object_pose,   # shape (1, 7)
+                    target_pose            # shape (1, 7)
+                )
+            else:
+                gripper_state = torch.tensor(GripperState.OPEN, device=env.unwrapped.device).unsqueeze(0)  # shape: (1, 1)
+                robot_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device).unsqueeze(0)  # shape: (1, 7)
+                des_pose = torch.cat([robot_pose, gripper_state.unsqueeze(-1)], dim=-1)
+                
         
             dones = env.step(des_pose)[-2]
 
@@ -977,7 +1013,8 @@ def run_simulator(env, env_cfg, args_cli):
             # reset state machine
             if dones.any():
                 grasped_bool_vec = [False, False, False, False]
-                if task_count != 0:
+                
+                if valid_task and task_count != 0:
                     save_episode_stepwise(episode_data)
                     episode_data = []
                 count = 0
@@ -990,6 +1027,7 @@ def run_simulator(env, env_cfg, args_cli):
                 restarted = True
                 sm.reset()
                 task_count += 1
+                valid_task = True
                 continue
 
 
