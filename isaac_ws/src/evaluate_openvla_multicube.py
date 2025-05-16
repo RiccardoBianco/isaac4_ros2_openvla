@@ -1,51 +1,44 @@
 
 OPENVLA_RESPONSE = True
+
+RANDOM_CAMERA = False
+RANDOM_OBJECT = False
+RANDOM_TARGET = True
+
 GT_EPISODE_PATH = "./isaac_ws/src/output/random_green/episode_0777.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
+
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 
-USE_MULTI_CUBE = True
-
-if USE_MULTI_CUBE:
-    if CUBE_COLOR_STR== "green":
-        CUBE_COLOR = (0.0, 1.0, 0.0) 
-        SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
-        THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
-        OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Blue cube offset
-        OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Yellow cube offset
-        INIT_OBJECT_POS = [0.35, 0.0, 0.0]
-    elif CUBE_COLOR_STR== "blue":
-        CUBE_COLOR = (0.0, 0.0, 1.0)
-        SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
-        THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
-        OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
-        OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
-        INIT_OBJECT_POS = [0.35, 0.15, 0.0]
-    elif CUBE_COLOR_STR== "yellow":
-        CUBE_COLOR = (1.0, 1.0, 0.0)
-        SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
-        THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
-        OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
-        OFFSET_THIRD_CUBE = [0.0, 0.30, 0.0]  # Blue cube offset
-        INIT_OBJECT_POS = [0.35, -0.15, 0.0]
-    else:
-        raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
+if CUBE_COLOR_STR== "green":
+    CUBE_COLOR = (0.0, 1.0, 0.0) 
+    SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+    THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
+    OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Blue cube offset
+    OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Yellow cube offset
+    INIT_OBJECT_POS = [0.35, 0.0, 0.0]
+elif CUBE_COLOR_STR== "blue":
+    CUBE_COLOR = (0.0, 0.0, 1.0)
+    SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
+    THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+    OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
+    OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
+    INIT_OBJECT_POS = [0.35, 0.15, 0.0]
+elif CUBE_COLOR_STR== "yellow":
+    CUBE_COLOR = (1.0, 1.0, 0.0)
+    SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
+    THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
+    OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
+    OFFSET_THIRD_CUBE = [0.0, 0.30, 0.0]  # Blue cube offset
+    INIT_OBJECT_POS = [0.35, -0.15, 0.0]
 else:
-    if CUBE_COLOR_STR== "green":
-        CUBE_COLOR = (0.0, 1.0, 0.0)
-    elif CUBE_COLOR_STR== "blue":
-        CUBE_COLOR = (0.0, 0.0, 1.0)
-    elif CUBE_COLOR_STR== "yellow":
-        CUBE_COLOR = (1.0, 1.0, 0.0)
-    else:
-        raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
+    raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
-if OPENVLA_RESPONSE and not USE_MULTI_CUBE:
-    INIT_OBJECT_POS = [0.4, -0.1, 0.0]
-    INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
-elif OPENVLA_RESPONSE and USE_MULTI_CUBE:
-    INIT_TARGET_POS = [0.55, 0.0, 0.0]
+if RANDOM_OBJECT:
+    INIT_TARGET_POS = [0.4, 0.0, 0.0]
+if OPENVLA_RESPONSE:
+    INIT_OBJECT_POS = [0.55, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
     import numpy as np
@@ -56,6 +49,7 @@ if not OPENVLA_RESPONSE:
     if 'object_pose' in step:
         INIT_OBJECT_POS = step['object_pose'][0, :3]
 
+INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
@@ -64,16 +58,14 @@ OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red a
 
 SEED = 777
 
-RANDOM_CAMERA = False
-RANDOM_OBJECT = False
-RANDOM_TARGET = True
+
 
 CAMERA_HEIGHT = 1920
 CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
 
-CAMERA_POSITION = [0.9, -0.16, 0.6]
+CAMERA_POSITION = [1.0, -0.16, 0.6]
 CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 
@@ -81,18 +73,12 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
 
-INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
+CAMERA_X_RANGE = (-0.1, 0.1)
+CAMERA_Y_RANGE = (-0.1, 0.1)
+CAMERA_Z_RANGE = (-0.1, 0.1)
 
 
-CAMERA_X_RANGE = (-0.2, 0.2)
-CAMERA_Y_RANGE = (-0.2, 0.2)
-CAMERA_Z_RANGE = (-0.2, 0.2)
-
-if RANDOM_TARGET and OPENVLA_RESPONSE and not USE_MULTI_CUBE: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
-    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
-elif RANDOM_TARGET and OPENVLA_RESPONSE and USE_MULTI_CUBE: # RELATIVE POSITION (TO INIT_OBJECT_POS)
+if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
@@ -349,6 +335,8 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
         self.events.reset_object_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+        self.events.reset_object2_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
+        self.events.reset_object3_position.params["pose_range"] = {"x": OBJECT_X_RANGE, "y": OBJECT_Y_RANGE, "z": OBJECT_Z_RANGE}
 
 
 
@@ -389,45 +377,53 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
                 rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
             ),
         )
-        
-        if USE_MULTI_CUBE:
-            # Create the second cube (blue)
-            self.scene.object2 = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object2",
-                spawn=sim_utils.CuboidCfg(
-                    size=CUBE_SIZE,  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=tuple(SECOND_CUBE_COLOR), # Colore blu
-                        metallic=0.0
-                    ),
-                ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=[INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]],  
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
-                ),
-            )
 
-            # Create the third cube (yellow)
-            self.scene.object3 = RigidObjectCfg(
-                prim_path="{ENV_REGEX_NS}/Object3",
-                spawn=sim_utils.CuboidCfg(
-                    size=CUBE_SIZE,  # Dimensioni del cubo
-                    rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                    mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                    collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
-                    visual_material=sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=tuple(THIRD_CUBE_COLOR),  # Colore giallo
-                        metallic=0.0
-                    ),
+        if RANDOM_OBJECT:
+            second_cube_pos = INIT_OBJECT_POS
+            third_cube_pos = INIT_OBJECT_POS
+        else:
+            second_cube_pos = [INIT_OBJECT_POS[0]+OFFSET_SECOND_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_SECOND_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_SECOND_CUBE[2]]
+            third_cube_pos = [INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1],INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]]
+
+
+
+        # Create the second cube (blue)
+        self.scene.object2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object2",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=tuple(SECOND_CUBE_COLOR), # Colore blu
+                    metallic=0.0
                 ),
-                init_state=RigidObjectCfg.InitialStateCfg(
-                    pos=[INIT_OBJECT_POS[0]+OFFSET_THIRD_CUBE[0], INIT_OBJECT_POS[1]+OFFSET_THIRD_CUBE[1], INIT_OBJECT_POS[2]+OFFSET_THIRD_CUBE[2]],  # OVERWRITTEN BY THE COMMANDER
-                    rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=second_cube_pos,  
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
+
+        # Create the third cube (yellow)
+        self.scene.object3 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object3",
+            spawn=sim_utils.CuboidCfg(
+                size=CUBE_SIZE,  # Dimensioni del cubo
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=tuple(THIRD_CUBE_COLOR),  # Colore giallo
+                    metallic=0.0
                 ),
-            )
+            ),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=third_cube_pos,  # OVERWRITTEN BY THE COMMANDER
+                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+            ),
+        )
 
         self.scene.box = RigidObjectCfg(
             prim_path="/World/Box",

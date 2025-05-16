@@ -1,8 +1,8 @@
 
-CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "blue" # "green", "blue", "yellow"
 
 RANDOM_CAMERA = True
-RANDOM_OBJECT = True
+RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
 
@@ -34,7 +34,7 @@ else:
 if RANDOM_OBJECT:
     INIT_OBJECT_POS = [0.4, 0.0, 0.0]
 
-INIT_TARGET_POS = [0.4, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_TARGET_POS = [0.55, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
@@ -67,14 +67,14 @@ ABOVE_OBJECT_OFFSET = 0.15
 
 
 
-CAMERA_X_RANGE = (-0.2, 0.2)
-CAMERA_Y_RANGE = (-0.2, 0.2)
-CAMERA_Z_RANGE = (-0.2, 0.2)
+CAMERA_X_RANGE = (-0.1, 0.1)
+CAMERA_Y_RANGE = (-0.1, 0.1)
+CAMERA_Z_RANGE = (-0.1, 0.1)
 
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
@@ -709,7 +709,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 800: 
+    if next_num > 3000: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -1059,7 +1059,7 @@ def hide_prim(prim_path: str):
 
 def main():
     # # parse configuration
-    clear_img_folder()
+    # clear_img_folder()
 
     env_cfg = FrankaCubeLiftEnvCfg()
     env_cfg.sim.device = args_cli.device
