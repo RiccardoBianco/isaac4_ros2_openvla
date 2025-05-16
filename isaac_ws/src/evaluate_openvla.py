@@ -5,7 +5,7 @@ CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 
-USE_MULTI_CUBE = False
+USE_MULTI_CUBE = True
 
 if USE_MULTI_CUBE:
     if CUBE_COLOR_STR== "green":
@@ -42,6 +42,8 @@ else:
 if OPENVLA_RESPONSE and not USE_MULTI_CUBE:
     INIT_OBJECT_POS = [0.4, -0.1, 0.0]
     INIT_TARGET_POS = [0.4, 0.1, 0.025]  # Z must be 0 in OpenVLA inference script
+elif OPENVLA_RESPONSE and USE_MULTI_CUBE:
+    INIT_TARGET_POS = [0.55, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
     import os
@@ -66,7 +68,7 @@ OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red a
 SEED = 777
 
 RANDOM_CAMERA = False
-RANDOM_OBJECT = True
+RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
 CAMERA_HEIGHT = 1920
@@ -85,8 +87,12 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 
-if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
+if RANDOM_TARGET and OPENVLA_RESPONSE and not USE_MULTI_CUBE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+elif RANDOM_TARGET and OPENVLA_RESPONSE and USE_MULTI_CUBE: # RELATIVE POSITION (TO INIT_OBJECT_POS)
+    TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
@@ -705,6 +711,19 @@ def set_new_random_camera_pose(env, camera):
     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
 
+def check_task_completed(env, robot):
+    current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    distance_object_target = np.linalg.norm(current_object_pose[:3] - current_target_pose[:3])
+
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
+    distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
+    if distance_object_target < 0.06 and distance_object_ee > 0.15:
+        print("Task completed! Distance: ", distance_object_target)
+        print("Distance between object and end effector: ", distance_object_ee)
+        return True
+    return False
+
 def run_simulator(env, args_cli):
    
     camera = env.unwrapped.scene["camera"]
@@ -733,10 +752,12 @@ def run_simulator(env, args_cli):
 
 
     goal_reached = False
-
+    task_completed = False
     while simulation_app.is_running():
 
         with torch.inference_mode():  
+
+            task_completed = check_task_completed(env, robot)
 
             if count == 0:
                 des_state = get_init_des_state(env)
@@ -750,7 +771,7 @@ def run_simulator(env, args_cli):
             goal_reached = adaptive_check_des_state_reached(current_state, des_state, angle_threshold=0.05, adaptation_state=adaptation_state)
 
             
-            if goal_reached and count > 0:
+            if goal_reached and count > 0 and not task_completed:
                 print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
                     res = get_openvla_res(camera_index, camera)
@@ -790,6 +811,7 @@ def run_simulator(env, args_cli):
                 global current_step_index
                 current_step_index = 0
                 task_count += 1
+                task_completed = False
 
                 continue
 
