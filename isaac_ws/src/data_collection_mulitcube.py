@@ -1,6 +1,9 @@
 
 CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
 
+RANDOM_CAMERA = False
+RANDOM_OBJECT = False
+RANDOM_TARGET = True
 
 
 if CUBE_COLOR_STR== "green":
@@ -27,17 +30,13 @@ elif CUBE_COLOR_STR== "yellow":
 else:
     raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
+if RANDOM_OBJECT:
+    INIT_OBJECT_POS = [0.4, 0.0, 0.0]
+
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
-
-
-# & Multi Cube Setup
-USE_MULTI_CUBE = True
 
 SEED = 42
 
-RANDOM_CAMERA = False
-RANDOM_OBJECT = False
-RANDOM_TARGET = True
 
 SAVE = True
 
@@ -64,6 +63,9 @@ ABOVE_OBJECT_OFFSET = 0.15
 INIT_TARGET_POS = [0.55, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
+CAMERA_X_RANGE = (-0.2, 0.2)
+CAMERA_Y_RANGE = (-0.2, 0.2)
+CAMERA_Z_RANGE = (-0.2, 0.2)
 
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
@@ -756,20 +758,51 @@ def get_current_ee(robot):
     current_state = torch.cat([ee_pos_b, ee_quat_b], dim=-1) # (1, 7)
     return current_state
 
-def set_new_random_camera_pose(env, camera):
-    # Base position
-    base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
+# def set_new_random_camera_pose(env, camera):
+#     # Base position
+#     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
     
-    # Random offset in [-0.3, 0.3]
-    random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
+#     # Random offset in [-0.3, 0.3]
+#     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
 
-    # Final camera position
-    camera_positions = base_camera_position + random_offset
-    camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
-    camera.set_world_poses_from_view(camera_positions, camera_targets)
-    camera_pose_to_save = torch.cat([camera_positions, camera_targets], dim=-1)
+#     # Final camera position
+#     camera_positions = base_camera_position + random_offset
+#     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+#     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+#     camera.set_world_poses_from_view(camera_positions, camera_targets)
+#     camera_pose_to_save = torch.cat([camera_positions, camera_targets], dim=-1)
+#     return camera_pose_to_save
+
+def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 0.2), z_range=(-0.2, 0.2)):
+    """
+    Imposta una nuova posizione casuale della camera all'interno dei range specificati per x, y, z.
+
+    Args:
+        env: ambiente della simulazione
+        camera: oggetto camera
+        x_range, y_range, z_range: tuple con (min, max) per ogni asse
+    """
+    device = env.unwrapped.device
+
+    base_camera_position = torch.tensor(CAMERA_POSITION, device=device)
+
+    # Genera offset randomici per ciascun asse
+    offset_x = torch.FloatTensor(1).uniform_(*x_range).to(device)
+    offset_y = torch.FloatTensor(1).uniform_(*y_range).to(device)
+    offset_z = torch.FloatTensor(1).uniform_(*z_range).to(device)
+
+    random_offset = torch.cat([offset_x, offset_y, offset_z])
+
+    # Applica l'offset
+    camera_position = base_camera_position + random_offset
+    camera_position = camera_position.unsqueeze(0)  # (1, 3)
+
+    camera_target = torch.tensor([CAMERA_TARGET], device=device)
+    
+    camera.set_world_poses_from_view(camera_position, camera_target)
+    camera_pose_to_save = torch.cat([camera_position, camera_target], dim=-1)
     return camera_pose_to_save
+
 
 def set_new_target_pose(env):
     goal_pose = env.unwrapped.command_manager.get_command("target_pose")
@@ -950,7 +983,7 @@ def run_simulator(env, env_cfg, args_cli):
                 count = 0
                
                 if RANDOM_CAMERA:
-                    camera_pose_to_save = set_new_random_camera_pose(env, camera)
+                    camera_pose_to_save = set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE)
                    
                 set_new_target_pose(env)
 

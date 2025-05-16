@@ -38,6 +38,8 @@ else:
         CUBE_COLOR = (0.0, 0.0, 1.0)
     elif CUBE_COLOR_STR== "yellow":
         CUBE_COLOR = (1.0, 1.0, 0.0)
+    else:
+        raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
 if OPENVLA_RESPONSE and not USE_MULTI_CUBE:
     INIT_OBJECT_POS = [0.4, -0.1, 0.0]
@@ -46,16 +48,11 @@ elif OPENVLA_RESPONSE and USE_MULTI_CUBE:
     INIT_TARGET_POS = [0.55, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
-    import os
     import numpy as np
-    # Need to use an episode data
-    # Now get the positions
     episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
     step = episode[0]
-    # Load data from the first step
     if 'target_pose' in step:
         INIT_TARGET_POS = step['target_pose'][0, :3]
-
     if 'object_pose' in step:
         INIT_OBJECT_POS = step['object_pose'][0, :3]
 
@@ -86,6 +83,10 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
+
+CAMERA_X_RANGE = (-0.2, 0.2)
+CAMERA_Y_RANGE = (-0.2, 0.2)
+CAMERA_Z_RANGE = (-0.2, 0.2)
 
 if RANDOM_TARGET and OPENVLA_RESPONSE and not USE_MULTI_CUBE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
@@ -698,18 +699,47 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
         print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
     return False
 
-def set_new_random_camera_pose(env, camera):
-    # Base position
-    base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
+# def set_new_random_camera_pose(env, camera):
+#     # Base position
+#     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
     
-    # Random offset in [-0.3, 0.3]
-    random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
+#     # Random offset in [-0.3, 0.3]
+#     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
 
-    # Final camera position
-    camera_positions = base_camera_position + random_offset
-    camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-    camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
-    camera.set_world_poses_from_view(camera_positions, camera_targets)
+#     # Final camera position
+#     camera_positions = base_camera_position + random_offset
+#     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+#     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+#     camera.set_world_poses_from_view(camera_positions, camera_targets)
+
+def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 0.2), z_range=(-0.2, 0.2)):
+    """
+    Imposta una nuova posizione casuale della camera all'interno dei range specificati per x, y, z.
+
+    Args:
+        env: ambiente della simulazione
+        camera: oggetto camera
+        x_range, y_range, z_range: tuple con (min, max) per ogni asse
+    """
+    device = env.unwrapped.device
+
+    base_camera_position = torch.tensor(CAMERA_POSITION, device=device)
+
+    # Genera offset randomici per ciascun asse
+    offset_x = torch.FloatTensor(1).uniform_(*x_range).to(device)
+    offset_y = torch.FloatTensor(1).uniform_(*y_range).to(device)
+    offset_z = torch.FloatTensor(1).uniform_(*z_range).to(device)
+
+    random_offset = torch.cat([offset_x, offset_y, offset_z])
+
+    # Applica l'offset
+    camera_position = base_camera_position + random_offset
+    camera_position = camera_position.unsqueeze(0)  # (1, 3)
+
+    camera_target = torch.tensor([CAMERA_TARGET], device=device)
+    
+    camera.set_world_poses_from_view(camera_position, camera_target)
+
 
 def check_task_completed(env, robot):
     current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
@@ -803,7 +833,7 @@ def run_simulator(env, args_cli):
             if dones.any():
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
-                    set_new_random_camera_pose(env, camera) # set the new random camera position in simulation
+                    set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
 
                 set_new_goal_pose(env) # set the new box (goal) position in simulation 
             
