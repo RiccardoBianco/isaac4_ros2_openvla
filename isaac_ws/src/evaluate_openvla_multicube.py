@@ -2,6 +2,8 @@
 OPENVLA_RESPONSE = True
 
 RANDOM_CAMERA = True
+RANDOM_CAMERA_EVERY_VLA_STEP = True
+
 RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
@@ -736,6 +738,8 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
     camera_target = torch.tensor([CAMERA_TARGET], device=device)
     
     camera.set_world_poses_from_view(camera_position, camera_target)
+
+
 def get_object_from_color(cube_color_input):
     if cube_color_input == "green":
         if CUBE_COLOR == (0.0, 1.0, 0.0):
@@ -832,7 +836,8 @@ def run_simulator(env, args_cli):
             if goal_reached and count > 0 and not task_completed:
                 print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
-                    
+                    if RANDOM_CAMERA_EVERY_VLA_STEP:
+                        set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
                     res = get_openvla_res(camera_index, camera, task_instruction)
                     finished_episode = False
                     
