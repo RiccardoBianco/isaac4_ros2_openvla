@@ -39,6 +39,7 @@ class ObjectTableSceneCfg(InteractiveSceneCfg):
     object: RigidObjectCfg | DeformableObjectCfg = MISSING
     object2: RigidObjectCfg | DeformableObjectCfg = MISSING
     object3: RigidObjectCfg | DeformableObjectCfg = MISSING
+    target_object: RigidObjectCfg | DeformableObjectCfg = MISSING
 
     # Table
     table = AssetBaseCfg(
@@ -142,7 +143,7 @@ class EventCfg:
         params={
             "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}, # OBJECT POSE -> CUBE
             "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object2", body_names="Object"),
+            "asset_cfg": SceneEntityCfg("object2", body_names="Object2"),
         },
     )
     reset_object3_position = EventTerm(
@@ -152,7 +153,17 @@ class EventCfg:
         params={
             "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}, # OBJECT POSE -> CUBE
             "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object3", body_names="Object"),
+            "asset_cfg": SceneEntityCfg("object3", body_names="Object3"),
+        },
+    )
+
+    reset_target_pose = EventTerm(
+        func=mdp.reset_generated_commands,
+        mode="reset",
+        params={
+            "pose_range": {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}, # OBJECT POSE -> CUBE
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("target_object", body_names="TargetObject"),
         },
     )
 

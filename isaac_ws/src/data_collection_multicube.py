@@ -273,7 +273,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
         self.scene.table = AssetBaseCfg(
-            prim_path="/World/Table",
+            prim_path="{ENV_REGEX_NS}/Table",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/thor_table.usd", scale=(1.5, 1.5, 1.0)
             ),
@@ -345,8 +345,8 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             ),
         )
 
-        self.scene.box = RigidObjectCfg(
-            prim_path="/World/Box",
+        self.scene.target_object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/TargetObject",
             spawn=sim_utils.CuboidCfg(
                 size=(0.1, 0.1, 0.005),  # Dimensioni del cubo
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
@@ -385,7 +385,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
 
 
         self.scene.camera = CameraCfg(
-            prim_path="/World/CameraSensor",
+            prim_path="{ENV_REGEX_NS}/CameraSensor",
             update_period=0,
             height=CAMERA_HEIGHT,
             width=CAMERA_WIDTH,
@@ -404,7 +404,7 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
         )
 
         self.scene.wrist_camera = CameraCfg(
-            prim_path="/World/envs/env_0/Robot/panda_hand/WristCameraSensor",
+            prim_path="{ENV_REGEX_NS}/Robot/panda_hand/WristCameraSensor",
             update_period=0,
             height=CAMERA_HEIGHT,
             width=CAMERA_WIDTH,
@@ -903,6 +903,14 @@ def check_valid_task(env):
 
 def run_simulator(env, env_cfg, args_cli):
 
+    num_envs = env.unwrapped.num_envs
+    state_machines = [StateMachine(env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.device) for _ in range(num_envs)]
+
+    episode_data_dict = {i: [] for i in range(num_envs)}
+    grasped_flags_dict = {i: [False, False, False, False] for i in range(num_envs)}
+    valid_task_flags = {i: True for i in range(num_envs)}
+
+
     save_config_file()
 
     camera = env.unwrapped.scene["camera"]
@@ -911,7 +919,6 @@ def run_simulator(env, env_cfg, args_cli):
 
     print("\n\nRUNNING SIMULATOR!\n\n")
 
-    episode_data = []
 
     # Set the camera position and target (wrist camera is already attached to the robot in the config)
     camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
@@ -924,10 +931,8 @@ def run_simulator(env, env_cfg, args_cli):
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
     actions[:, 3] = 1.0
 
-    # create state machine
-    sm = StateMachine(env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.device)
 
-    assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
+    assign_material(object_path="{ENV_REGEX_NS}/Table", material_path="{ENV_REGEX_NS}/Table/Looks/Black")
 
     count = 0
     task_count = 0
@@ -937,9 +942,6 @@ def run_simulator(env, env_cfg, args_cli):
     robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device).unsqueeze(0) # (1, 7) ->  [x, y, z, qw, qx, qy, qz] # towards down
     robot_init_pose[:, 2] -= OFFSET_EE
 
-
-    grasped_bool_vec= (False, False, False, False)
-    valid_task = True
     while simulation_app.is_running():
         
     
