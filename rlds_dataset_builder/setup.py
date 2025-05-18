@@ -1,3 +1,3 @@
 from setuptools import setup
 
-setup(name="<name_of_your_dataset>", packages=["<name_of_your_dataset>"])
+setup(name="sim_data_custom_v0", packages=["sim_data_custom_v0"])

@@ -1,14 +1,14 @@
 
 OPENVLA_RESPONSE = True
 
-RANDOM_CAMERA = False
+RANDOM_CAMERA = True
 RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
-GT_EPISODE_PATH = "./isaac_ws/src/output/random_green/episode_0777.npy"
+GT_EPISODE_PATH = "./isaac_ws/src/output/multi_y_random_camera/episode_4000.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 
-CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "blue" # "green", "blue", "yellow"
 
 
 if CUBE_COLOR_STR== "green":
@@ -38,7 +38,7 @@ else:
 if RANDOM_OBJECT:
     INIT_TARGET_POS = [0.4, 0.0, 0.0]
 if OPENVLA_RESPONSE:
-    INIT_OBJECT_POS = [0.55, 0.0, 0.0]
+    INIT_TARGET_POS = [0.55, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
     import numpy as np
@@ -73,13 +73,13 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
 
-CAMERA_X_RANGE = (-0.1, 0.1)
-CAMERA_Y_RANGE = (-0.1, 0.1)
-CAMERA_Z_RANGE = (-0.1, 0.1)
+CAMERA_X_RANGE = (-0.15, 0.15)
+CAMERA_Y_RANGE = (-0.15, 0.15)
+CAMERA_Z_RANGE = (-0.15, 0.15)
 
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
+    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
@@ -578,11 +578,11 @@ def set_new_goal_pose(env):
     # Scrive la nuova pose alla simulazione
     env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
-def get_openvla_res(camera_index, camera):
+def get_openvla_res(camera_index, camera, task_instruction):
     image_array = take_image(camera_index, camera)
     payload = {
         "image": image_array,  # Sending as numpy array, no conversion to list
-        "instruction": OPENVLA_INSTRUCTION,
+        "instruction": task_instruction,
         "unnorm_key": OPENVLA_UNNORM_KEY  # Add the unnorm_key to the payload
     }
     #Send request to the server
@@ -656,10 +656,10 @@ def adaptive_check_des_state_reached(current_state, desired_state, angle_thresho
     adaptation_state.prev_position_error = position_error
 
     if position_error < adaptation_state.position_threshold and angle_error < angle_threshold and gripper_correct:
-        print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        #print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
         return True
     else:
-        print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        #print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
         return False
 
 
@@ -689,10 +689,11 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
     # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
     # angle_deg = np.degrees(angle_error.item())
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
-        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        #print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
         return True
     else:
-        print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        pass
+        #print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
     return False
 
 # def set_new_random_camera_pose(env, camera):
@@ -735,19 +736,48 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
     camera_target = torch.tensor([CAMERA_TARGET], device=device)
     
     camera.set_world_poses_from_view(camera_position, camera_target)
+def get_object_from_color(cube_color_input):
+    if cube_color_input == "green":
+        if CUBE_COLOR == (0.0, 1.0, 0.0):
+            return "object"
+        elif SECOND_CUBE_COLOR == (0.0, 1.0, 0.0):
+            return "object2"
+        elif THIRD_CUBE_COLOR == (0.0, 1.0, 0.0):
+            return "object3"
+    elif cube_color_input == "blue":
+        if CUBE_COLOR == (0.0, 0.0, 1.0):
+            return "object"
+        elif SECOND_CUBE_COLOR == (0.0, 0.0, 1.0):
+            return "object2"
+        elif THIRD_CUBE_COLOR == (0.0, 0.0, 1.0):
+            return "object3"
+    elif cube_color_input == "yellow":
+        if CUBE_COLOR == (1.0, 1.0, 0.0):
+            return "object"
+        elif SECOND_CUBE_COLOR == (1.0, 1.0, 0.0):
+            return "object2"
+        elif THIRD_CUBE_COLOR == (1.0, 1.0, 0.0):
+            return "object3"
+    else:
+        print("Invalid color input. Please enter 'green', 'blue', or 'yellow'.")
+        return None
 
-
-def check_task_completed(env, robot):
-    current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+def check_task_completed(env, robot, cube_color_input):
+    object = get_object_from_color(cube_color_input)
+    if object is None:
+        return False
+    current_object_pose = env.unwrapped.scene[object].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     distance_object_target = np.linalg.norm(current_object_pose[:3] - current_target_pose[:3])
 
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
-    if distance_object_target < 0.06 and distance_object_ee > 0.15:
+    if distance_object_target < 0.07 and distance_object_ee > 0.15:
         print("Task completed! Distance: ", distance_object_target)
         print("Distance between object and end effector: ", distance_object_ee)
         return True
+    #print("Task not completed! Distance: ", distance_object_target)
+    #print("Distance between object and end effector: ", distance_object_ee)
     return False
 
 def run_simulator(env, args_cli):
@@ -779,11 +809,13 @@ def run_simulator(env, args_cli):
 
     goal_reached = False
     task_completed = False
+    cube_color_input = "green"
+    task_instruction = OPENVLA_INSTRUCTION
     while simulation_app.is_running():
 
         with torch.inference_mode():  
 
-            task_completed = check_task_completed(env, robot)
+            task_completed = check_task_completed(env, robot, cube_color_input)
 
             if count == 0:
                 des_state = get_init_des_state(env)
@@ -800,7 +832,8 @@ def run_simulator(env, args_cli):
             if goal_reached and count > 0 and not task_completed:
                 print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
-                    res = get_openvla_res(camera_index, camera)
+                    
+                    res = get_openvla_res(camera_index, camera, task_instruction)
                     finished_episode = False
                     
                 else:
@@ -824,6 +857,10 @@ def run_simulator(env, args_cli):
             dones = env.step(des_state)[-2]
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
+
+            if count == 0:
+                cube_color_input = input("Enter the color of the cube (green, blue, yellow): ")
+                task_instruction = f"Pick the {cube_color_input} cube and place it on the red area. \n"
 
 
             if dones.any():

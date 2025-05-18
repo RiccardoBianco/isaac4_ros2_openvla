@@ -1,5 +1,4 @@
-TODO(example_dataset): Markdown description of your dataset.
-Description is **formatted** as markdown.
-
-It should also contain any processing which has been applied (if any),
-(e.g. corrupted example skipped, images cropped,...):
+To build dataset with parallelization
+```
+tfds build --overwrite --beam_pipeline_options="direct_running_mode=multi_processing,direct_num_workers=10"
+```
