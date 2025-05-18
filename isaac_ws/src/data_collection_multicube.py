@@ -1,5 +1,5 @@
 
-CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 RANDOM_CAMERA = True
 RANDOM_OBJECT = True
@@ -709,7 +709,7 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
     existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
     episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
     next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 3000: 
+    if next_num > 6000: 
         simulation_app.close()
         print("Maximum number of episodes reached. Exiting...")
         exit(0)
@@ -1059,7 +1059,7 @@ def hide_prim(prim_path: str):
 
 def main():
     # # parse configuration
-    clear_img_folder()
+    # clear_img_folder()
 
     env_cfg = FrankaCubeLiftEnvCfg()
     env_cfg.sim.device = args_cli.device
