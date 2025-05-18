@@ -20,4 +20,4 @@ if [[ -z "$TYPE" ]]; then
 fi
 
 # Run the Isaac Lab data collection script with the chosen type
-./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/data_collection_"$TYPE".py --enable_cameras --save
+./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/data_collection_"$TYPE".py --enable_cameras --save --headless

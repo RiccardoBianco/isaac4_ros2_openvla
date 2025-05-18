@@ -1,8 +1,8 @@
 
-CUBE_COLOR_STR= "blue" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
 
 RANDOM_CAMERA = True
-RANDOM_OBJECT = False
+RANDOM_OBJECT = True
 RANDOM_TARGET = True
 
 
@@ -34,12 +34,12 @@ else:
 if RANDOM_OBJECT:
     INIT_OBJECT_POS = [0.4, 0.0, 0.0]
 
-INIT_TARGET_POS = [0.55, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_TARGET_POS = [0.4, 0.0, 0.0]  # Z must be 0 in OpenVLA inference script
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n" # Will be updated in the future (depending on the cube picked)
 
-SEED = 42
+SEED = None
 
 
 SAVE = True
@@ -73,8 +73,8 @@ CAMERA_Z_RANGE = (-0.1, 0.1)
 
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
@@ -1059,13 +1059,14 @@ def hide_prim(prim_path: str):
 
 def main():
     # # parse configuration
-    # clear_img_folder()
+    clear_img_folder()
 
     env_cfg = FrankaCubeLiftEnvCfg()
     env_cfg.sim.device = args_cli.device
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
-    env_cfg.seed = SEED
+    if SEED is not None:
+        env_cfg.seed = SEED
 
     # create environment
     env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
