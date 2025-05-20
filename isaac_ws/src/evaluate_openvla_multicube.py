@@ -876,7 +876,7 @@ def run_simulator(env, args_cli):
             distance_object_target = get_dist_object_target(env)
 
             task_completed = check_task_completed(env, robot, cube_color_input)
-            if task_completed:
+            if task_completed and simulation_step==600:
                 simulation_step = count
 
             if count == 0:

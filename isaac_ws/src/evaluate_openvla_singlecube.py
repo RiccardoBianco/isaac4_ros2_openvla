@@ -764,7 +764,7 @@ def run_simulator(env, args_cli):
  
 
             task_completed = check_task_completed(env, robot)
-            if task_completed:
+            if task_completed and simulation_step==600:
                 simulation_step = count
 
             if count == 0:
