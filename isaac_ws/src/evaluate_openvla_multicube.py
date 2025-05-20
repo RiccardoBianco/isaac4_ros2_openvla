@@ -10,6 +10,9 @@ RANDOM_TARGET = True
 GT_EPISODE_PATH = "./isaac_ws/src/output/multi_y_random_camera/episode_4000.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 
+SAVE_STATS = True
+SAVE_STATS_DIR = "./isaac_ws/src/stats/"
+
 CUBE_COLOR_STR= "blue" # "green", "blue", "yellow"
 
 
@@ -738,6 +741,8 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
     camera_target = torch.tensor([CAMERA_TARGET], device=device)
     
     camera.set_world_poses_from_view(camera_position, camera_target)
+    return camera_position.clone().squeeze(0).cpu().numpy().astype(np.float32)  
+
 
 
 def get_object_from_color(cube_color_input):
@@ -784,6 +789,48 @@ def check_task_completed(env, robot, cube_color_input):
     #print("Distance between object and end effector: ", distance_object_ee)
     return False
 
+def convert_numpy(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):  # es. np.float32, np.bool_
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(v) for v in obj]
+    else:
+        return obj
+    
+def save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
+    stats = {
+        "task_count": task_count,
+        "simulation_step": simulation_step,
+        "initial_camera_pose": initial_camera_pose,
+        "initial_target_pose": initial_target_pose,
+        "initial_object_pose": initial_object_pose,
+        "distance_object_target": distance_object_target,
+        "completed": distance_object_target < 0.07,
+    }
+
+    stats = convert_numpy(stats)
+    if not os.path.exists(SAVE_STATS_DIR):
+        os.makedirs(SAVE_STATS_DIR, exist_ok=True)
+
+    save_stats_path = os.path.join(SAVE_STATS_DIR, save_stats_file)
+
+    with open(save_stats_path, "a") as f:
+        f.write(json.dumps(stats) + "\n") 
+
+
+
+def get_dist_object_target(env):
+    # voglio salvare se -> 
+    current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+
+    distance_object_target = np.linalg.norm(current_object_pose[:2] - current_target_pose[:2]) # only x, y
+    return distance_object_target
+
 def run_simulator(env, args_cli):
    
     camera = env.unwrapped.scene["camera"]
@@ -809,19 +856,32 @@ def run_simulator(env, args_cli):
     task_count = 0
     adaptation_state = ThresholdAdaptationState(default_threshold=0.005, max_stuck_steps=10)
 
-
+    
 
     goal_reached = False
     task_completed = False
-    cube_color_input = "green"
+    cube_color_input = CUBE_COLOR_STR
     task_instruction = OPENVLA_INSTRUCTION
+    if SAVE_STATS:
+        save_stats_file = input("Specify the name of the file to save stats: ")
+
+    initial_camera_pose = np.array([CAMERA_POSITION])
+    simulation_step = 600
+
+
     while simulation_app.is_running():
 
         with torch.inference_mode():  
 
+            distance_object_target = get_dist_object_target(env)
+
             task_completed = check_task_completed(env, robot, cube_color_input)
+            if task_completed:
+                simulation_step = count
 
             if count == 0:
+                initial_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+                initial_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
                 des_state = get_init_des_state(env)
                 ee_prev_pos = torch.tensor(des_state[:, :3], device=env.unwrapped.device)
                 ee_prev_quat = torch.tensor(des_state[:, 3:7], device=env.unwrapped.device)
@@ -863,15 +923,19 @@ def run_simulator(env, args_cli):
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
 
-            if count == 0:
+            if count == 0 and not SAVE_STATS:
                 cube_color_input = input("Enter the color of the cube (green, blue, yellow): ")
                 task_instruction = f"Pick the {cube_color_input} cube and place it on the red area. \n"
 
 
             if dones.any():
+
+                if SAVE_STATS:
+                    save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
+
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
-                    set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
+                    initial_camera_pose = set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
 
                 set_new_goal_pose(env) # set the new box (goal) position in simulation 
             
