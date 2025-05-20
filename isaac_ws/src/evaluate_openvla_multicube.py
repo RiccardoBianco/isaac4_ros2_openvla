@@ -2,7 +2,7 @@
 OPENVLA_RESPONSE = True
 
 RANDOM_CAMERA = True
-RANDOM_CAMERA_EVERY_VLA_STEP = True
+RANDOM_CAMERA_EVERY_VLA_STEP = False
 
 RANDOM_OBJECT = False
 RANDOM_TARGET = True
@@ -37,11 +37,10 @@ elif CUBE_COLOR_STR== "yellow":
 else:
     raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
-if RANDOM_OBJECT:
-    INIT_TARGET_POS = [0.4, 0.0, 0.0]
-    INIT_TARGET_POS =  [0.4, 0.0, 0.0]
-# if OPENVLA_RESPONSE:
-#     INIT_TARGET_POS = [0.55, 0.0, 0.0]
+INIT_TARGET_POS = [0.4, 0.0, 0.0]
+
+if OPENVLA_RESPONSE:
+    INIT_TARGET_POS = [0.55, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
     import numpy as np
@@ -76,15 +75,15 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
 
-CAMERA_X_RANGE = (-0.1, 0.1)
-CAMERA_Y_RANGE = (-0.1, 0.1)
-CAMERA_Z_RANGE = (-0.1, 0.1)
+CAMERA_X_RANGE = (-0.2, 0.2)
+CAMERA_Y_RANGE = (-0.2, 0.2)
+CAMERA_Z_RANGE = (-0.2, 0.2)
 
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
-    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[2])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
@@ -597,9 +596,9 @@ def get_openvla_res(camera_index, camera, task_instruction):
     return res
 
 
-
-episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
-current_step_index = 0
+if not OPENVLA_RESPONSE:
+    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+    current_step_index = 0
 def get_ground_truth_res():
     global current_step_index
     global episode

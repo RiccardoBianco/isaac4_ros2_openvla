@@ -54,7 +54,12 @@ SERVER_SIDE_FOLDER = "server_side_images"
 DEFAULT_IMAGE_NAME = "received_image"
 BASE_MODEL = "openvla/openvla-7b"
 
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_green_noaug_PERFECT"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_green_noaug_PERFECT"
+#FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_s_cube_r_camera_r_target_17500_noaug"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_multi_cube_noaug"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_s_cub_r_tar_r_cam_noaug_17500"
+
+FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/single_green_r_all_noaug_75000"
 
 OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path
 
@@ -209,10 +214,10 @@ def deploy(cfg: DeployConfig) -> None:
         clear_img_folder()
     server = OpenVLAServer(cfg.openvla_path)
 
-    if cfg.openvla_path == FINETUNED_MODEL:
-        print("Using finetuned model")
-    elif cfg.openvla_path == BASE_MODEL:
-        print("Using base model")
+    # if cfg.openvla_path == FINETUNED_MODEL:
+    #     print("Using finetuned model")
+    # elif cfg.openvla_path == BASE_MODEL:
+    #     print("Using base model")
 
     server.run(cfg.host, port=cfg.port)
 

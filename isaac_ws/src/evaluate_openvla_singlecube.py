@@ -1,13 +1,13 @@
 
-OPENVLA_RESPONSE = False
+OPENVLA_RESPONSE = True
 
 GT_EPISODE_PATH = "./isaac_ws/src/output/random_camera_green/episode_0011.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 RANDOM_CAMERA = False
-RANDOM_OBJECT = True
-RANDOM_TARGET = True
+RANDOM_OBJECT = False
+RANDOM_TARGET = False
 
 if CUBE_COLOR_STR== "green":
     CUBE_COLOR = (0.0, 1.0, 0.0)
@@ -42,7 +42,7 @@ CAMERA_WIDTH = 1920
 OPENVLA_CAMERA_HEIGHT = 256
 OPENVLA_CAMERA_WIDTH = 256
 
-CAMERA_POSITION = [0.9, -0.16, 0.6]
+CAMERA_POSITION = [1.22, -0.22, 0.9] #[1.0, -0.4, 0.9] video single_cube_random_all_static_camera #[0.9, -0.16, 0.6] original camera config # [1.2, -0.2, 0.9] for pretrained video
 CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 
@@ -56,11 +56,11 @@ CAMERA_Z_RANGE = (-0.2, 0.2)
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
-    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[2])
 elif RANDOM_TARGET and OPENVLA_RESPONSE: # RELATIVE POSITION (TO INIT_OBJECT_POS)
     TARGET_X_RANGE = (-0.15 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
-    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[1])
+    TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[2])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
     TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
@@ -519,9 +519,9 @@ def get_openvla_res(camera_index, camera):
     return res
 
 
-
-episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
-current_step_index = 0
+if not OPENVLA_RESPONSE:
+    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+    current_step_index = 0
 def get_ground_truth_res():
     global current_step_index
     global episode
