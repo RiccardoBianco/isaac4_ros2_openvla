@@ -801,9 +801,8 @@ def convert_numpy(obj):
     else:
         return obj
     
-def save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
+def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
     stats = {
-        "task_count": task_count,
         "simulation_step": simulation_step,
         "initial_camera_pose": initial_camera_pose,
         "initial_target_pose": initial_target_pose,
@@ -830,6 +829,26 @@ def get_dist_object_target(env):
 
     distance_object_target = np.linalg.norm(current_object_pose[:2] - current_target_pose[:2]) # only x, y
     return distance_object_target
+
+
+def check_valid_task(env):
+    object_pos = env.unwrapped.scene["object"].data.root_state_w[:, :3].clone()
+    object2_pos = env.unwrapped.scene["object2"].data.root_state_w[:, :3].clone()
+    object3_pos = env.unwrapped.scene["object3"].data.root_state_w[:, :3].clone()
+    target_pos = env.unwrapped.scene["box"].data.root_state_w[:, :3].clone()
+    distance_object_object2 = torch.norm(object_pos - object2_pos, dim=1)
+    distance_object_object3 = torch.norm(object_pos - object3_pos, dim=1)
+    distance_object_target = torch.norm(object_pos - target_pos, dim=1)
+    distance_object2_target = torch.norm(object2_pos - target_pos, dim=1)
+    distance_object3_target = torch.norm(object3_pos - target_pos, dim=1)
+
+    if distance_object_object2.item() < 0.065 or distance_object_object3.item() < 0.065:
+        print("Object too close to another object.")
+        return False
+    if distance_object_target.item() < 0.08 or distance_object2_target.item() < 0.08 or distance_object3_target.item() < 0.08:
+        print("Object too close to the target.")
+        return False
+    return True
 
 def run_simulator(env, args_cli):
    
@@ -862,6 +881,9 @@ def run_simulator(env, args_cli):
     task_completed = False
     cube_color_input = CUBE_COLOR_STR
     task_instruction = OPENVLA_INSTRUCTION
+
+    valid_task = True
+
     if SAVE_STATS:
         save_stats_file = input("Specify the name of the file to save stats: ")
 
@@ -871,7 +893,9 @@ def run_simulator(env, args_cli):
 
     while simulation_app.is_running():
 
-        with torch.inference_mode():  
+        with torch.inference_mode(): 
+            if count == 0:
+                valid_task = check_valid_task(env) 
 
             distance_object_target = get_dist_object_target(env)
 
@@ -893,7 +917,7 @@ def run_simulator(env, args_cli):
             goal_reached = adaptive_check_des_state_reached(current_state, des_state, angle_threshold=0.05, adaptation_state=adaptation_state)
 
             
-            if goal_reached and count > 0 and not task_completed:
+            if valid_task and goal_reached and count > 0 and not task_completed:
                 print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
                     if RANDOM_CAMERA_EVERY_VLA_STEP:
@@ -930,8 +954,8 @@ def run_simulator(env, args_cli):
 
             if dones.any():
 
-                if SAVE_STATS:
-                    save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
+                if SAVE_STATS and valid_task:
+                    save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
 
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:

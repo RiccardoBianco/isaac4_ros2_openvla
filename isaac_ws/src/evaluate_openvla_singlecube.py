@@ -691,9 +691,8 @@ def convert_numpy(obj):
     else:
         return obj
 
-def save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
+def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
     stats = {
-        "task_count": task_count,
         "simulation_step": simulation_step,
         "initial_camera_pose": initial_camera_pose,
         "initial_target_pose": initial_target_pose,
@@ -722,6 +721,15 @@ def get_dist_object_target(env):
     return distance_object_target
 
 
+def check_valid_task(env):
+    object_pos = env.unwrapped.scene["object"].data.root_state_w[:, :3].clone()
+    target_pos = env.unwrapped.scene["box"].data.root_state_w[:, :3].clone()
+    distance_object_target = torch.norm(object_pos - target_pos, dim=1)
+
+    if distance_object_target.item() <= 0.08:
+        print("Object too close to the target.")
+        return False
+    return True
 
 def run_simulator(env, args_cli):
    
@@ -747,6 +755,10 @@ def run_simulator(env, args_cli):
     count = 0
     task_count = 0
     adaptation_state = ThresholdAdaptationState(default_threshold=0.005, max_stuck_steps=10)
+    
+    
+    valid_task = True
+
     if SAVE_STATS:
         save_stats_file = input("Specify the name of the file to save stats: ")
 
@@ -758,7 +770,8 @@ def run_simulator(env, args_cli):
     while simulation_app.is_running():
 
         with torch.inference_mode(): 
-
+            if count == 0:
+                valid_task = check_valid_task(env) 
                         
             distance_object_target = get_dist_object_target(env)
  
@@ -781,7 +794,7 @@ def run_simulator(env, args_cli):
             goal_reached = adaptive_check_des_state_reached(current_state, des_state, angle_threshold=0.05, adaptation_state=adaptation_state)
 
             
-            if goal_reached and count > 0 and not task_completed:
+            if valid_task and goal_reached and count > 0 and not task_completed:
                 print("Goal reached: ", goal_reached)
                 if OPENVLA_RESPONSE:
                     res = get_openvla_res(camera_index, camera)
@@ -812,8 +825,8 @@ def run_simulator(env, args_cli):
 
             if dones.any():
                 
-                if SAVE_STATS:
-                    save_stats(task_count, simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
+                if SAVE_STATS and valid_task:
+                    save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
 
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
