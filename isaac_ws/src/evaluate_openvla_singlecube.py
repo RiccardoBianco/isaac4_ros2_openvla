@@ -839,6 +839,7 @@ def run_simulator(env, args_cli):
                 current_step_index = 0
                 task_count += 1
                 task_completed = False
+                simulation_step = 600
 
                 continue
 

@@ -4,7 +4,7 @@ OPENVLA_RESPONSE = True
 RANDOM_CAMERA = True
 RANDOM_CAMERA_EVERY_VLA_STEP = False
 
-RANDOM_OBJECT = False
+RANDOM_OBJECT = True
 RANDOM_TARGET = True
 
 GT_EPISODE_PATH = "./isaac_ws/src/output/multi_y_random_camera/episode_4000.npy"
@@ -13,25 +13,25 @@ CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 SAVE_STATS = True
 SAVE_STATS_DIR = "./isaac_ws/src/stats/"
 
-CUBE_COLOR_STR= "blue" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "grey" # "green", "blue", "yellow"
 
 
-if CUBE_COLOR_STR== "green":
+if CUBE_COLOR_STR== "green":  
     CUBE_COLOR = (0.0, 1.0, 0.0) 
     SECOND_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
     THIRD_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow 
     OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Blue cube offset
     OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Yellow cube offset
     INIT_OBJECT_POS = [0.35, 0.0, 0.0]
-elif CUBE_COLOR_STR== "blue":
+elif CUBE_COLOR_STR== "blue": # blue
     CUBE_COLOR = (0.0, 0.0, 1.0)
     SECOND_CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
     THIRD_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
     OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
     OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
     INIT_OBJECT_POS = [0.35, 0.15, 0.0]
-elif CUBE_COLOR_STR== "yellow":
-    CUBE_COLOR = (1.0, 1.0, 0.0)
+elif CUBE_COLOR_STR== "grey":
+    CUBE_COLOR = (0.5, 0.5, 0.5)
     SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
     THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
     OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
@@ -41,9 +41,8 @@ else:
     raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
 INIT_TARGET_POS = [0.4, 0.0, 0.0]
-
-if OPENVLA_RESPONSE:
-    INIT_TARGET_POS = [0.55, 0.0, 0.0]
+if RANDOM_OBJECT:
+    INIT_OBJECT_POS = [0.4, 0.0, 0.0]
 
 if not OPENVLA_RESPONSE:
     import numpy as np
@@ -57,11 +56,12 @@ if not OPENVLA_RESPONSE:
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
-OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
+# OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
+OPENVLA_INSTRUCTION = f"Pick the darkcube and do nothing. \n"
 
 
 
-SEED = 777
+SEED = 300
 
 
 
@@ -78,14 +78,14 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
 
-CAMERA_X_RANGE = (-0.2, 0.2)
-CAMERA_Y_RANGE = (-0.2, 0.2)
-CAMERA_Z_RANGE = (-0.2, 0.2)
+CAMERA_Y_RANGE = (-0.1, 0.1)
+CAMERA_Z_RANGE = (-0.1, 0.1)
+CAMERA_X_RANGE = (-0.1, 0.1)
 
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[2])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
@@ -760,8 +760,8 @@ def get_object_from_color(cube_color_input):
             return "object2"
         elif THIRD_CUBE_COLOR == (0.0, 0.0, 1.0):
             return "object3"
-    elif cube_color_input == "yellow":
-        if CUBE_COLOR == (1.0, 1.0, 0.0):
+    elif cube_color_input == "grey":
+        if CUBE_COLOR == (0.5, 0.5, 0.5):
             return "object"
         elif SECOND_CUBE_COLOR == (1.0, 1.0, 0.0):
             return "object2"
@@ -968,6 +968,7 @@ def run_simulator(env, args_cli):
                 current_step_index = 0
                 task_count += 1
                 task_completed = False
+                simulation_step = 600
 
                 continue
 
