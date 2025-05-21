@@ -13,7 +13,7 @@ CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 SAVE_STATS = True
 SAVE_STATS_DIR = "./isaac_ws/src/stats/"
 
-CUBE_COLOR_STR= "grey" # "green", "blue", "yellow"
+CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
 
 
 if CUBE_COLOR_STR== "green":  
@@ -30,8 +30,8 @@ elif CUBE_COLOR_STR== "blue": # blue
     OFFSET_SECOND_CUBE = [0.0, -0.30, 0.0]  # Yellow cube offset
     OFFSET_THIRD_CUBE = [0.0, -0.15, 0.0]  # Green cube offset
     INIT_OBJECT_POS = [0.35, 0.15, 0.0]
-elif CUBE_COLOR_STR== "grey":
-    CUBE_COLOR = (0.5, 0.5, 0.5)
+elif CUBE_COLOR_STR== "yellow":
+    CUBE_COLOR = (1.0, 1.0, 0.0)  # Yellow
     SECOND_CUBE_COLOR = (0.0, 1.0, 0.0)  # Green
     THIRD_CUBE_COLOR = (0.0, 0.0, 1.0)  # Blue
     OFFSET_SECOND_CUBE = [0.0, 0.15, 0.0]  # Green cube offset
@@ -43,6 +43,7 @@ else:
 INIT_TARGET_POS = [0.4, 0.0, 0.0]
 if RANDOM_OBJECT:
     INIT_OBJECT_POS = [0.4, 0.0, 0.0]
+
 
 if not OPENVLA_RESPONSE:
     import numpy as np
@@ -56,8 +57,9 @@ if not OPENVLA_RESPONSE:
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
-# OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
-OPENVLA_INSTRUCTION = f"Pick the darkcube and do nothing. \n"
+OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
+OPENVLA_INSTRUCTION = f"Go to the red goal and Do nothing. \n"
+
 
 
 
@@ -760,8 +762,8 @@ def get_object_from_color(cube_color_input):
             return "object2"
         elif THIRD_CUBE_COLOR == (0.0, 0.0, 1.0):
             return "object3"
-    elif cube_color_input == "grey":
-        if CUBE_COLOR == (0.5, 0.5, 0.5):
+    elif cube_color_input == "yellow":
+        if CUBE_COLOR == (1.0, 1.0, 0.0):
             return "object"
         elif SECOND_CUBE_COLOR == (1.0, 1.0, 0.0):
             return "object2"
