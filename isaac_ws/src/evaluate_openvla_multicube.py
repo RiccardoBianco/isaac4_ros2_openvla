@@ -4,16 +4,44 @@ OPENVLA_RESPONSE = True
 RANDOM_CAMERA = True
 RANDOM_CAMERA_EVERY_VLA_STEP = False
 
-RANDOM_OBJECT = True
+RANDOM_OBJECT = False
 RANDOM_TARGET = True
 
 GT_EPISODE_PATH = "./isaac_ws/src/output/multi_y_random_camera/episode_4000.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 
 SAVE_STATS = True
-SAVE_STATS_DIR = "./isaac_ws/src/stats/"
 
-CUBE_COLOR_STR= "yellow" # "green", "blue", "yellow"
+CAMERA_Y_RANGE = (-0.1, 0.1) # -0.1, 0.1 -> testo su 0.1, 0.2 e su -0.2, -0.1 -> poi testo su 0.2, 0.3  e -0.3, -0.2
+CAMERA_Z_RANGE = (-0.1, 0.1)
+CAMERA_X_RANGE = (-0.1, 0.1)
+
+save_stats_file = "multi_s_cub_r_tar_r_cam_camerainrange.json"
+
+# #### TEST 2 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_-10.json"
+# CAMERA_Y_RANGE = (-0.2, -0.1)
+
+# #### TEST 3 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_+10.json"
+# CAMERA_Y_RANGE = (0.1, 0.2)
+
+# #### TEST 4 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_-20.json"
+# CAMERA_Y_RANGE = (-0.3, -0.2)
+
+# #### TEST 5 ####
+save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_+20.json"
+CAMERA_Y_RANGE = (0.2, 0.3)
+
+
+
+
+
+SAVE_STATS_DIR = "./isaac_ws/src/stats/multi_s_cub_r_tar_r_cam_25%" # TODO set the right percentage
+
+CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
+
 
 
 if CUBE_COLOR_STR== "green":  
@@ -40,7 +68,7 @@ elif CUBE_COLOR_STR== "yellow":
 else:
     raise ValueError("Invalid cube color. Choose from 'green', 'blue', or 'yellow'.")
 
-INIT_TARGET_POS = [0.4, 0.0, 0.0]
+INIT_TARGET_POS = [0.55, 0.0, 0.0]
 if RANDOM_OBJECT:
     INIT_OBJECT_POS = [0.4, 0.0, 0.0]
 
@@ -58,12 +86,11 @@ INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red area. \n"
-OPENVLA_INSTRUCTION = f"Go to the red goal and Do nothing. \n"
 
 
 
 
-SEED = 300
+SEED = 777
 
 
 
@@ -80,14 +107,12 @@ CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
 
-CAMERA_Y_RANGE = (-0.1, 0.1)
-CAMERA_Z_RANGE = (-0.1, 0.1)
-CAMERA_X_RANGE = (-0.1, 0.1)
+
 
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
-    TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
-    TARGET_Y_RANGE = (-0.3 + INIT_TARGET_POS[1] , 0.3 + INIT_TARGET_POS[1])
+    TARGET_X_RANGE = (-0.12 + INIT_TARGET_POS[0], 0.15 + INIT_TARGET_POS[0])
+    TARGET_Y_RANGE = (-0.2 + INIT_TARGET_POS[1] , 0.2 + INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (0.0 + INIT_TARGET_POS[2], 0.0 + INIT_TARGET_POS[2])
 else:
     TARGET_X_RANGE = (INIT_TARGET_POS[0], INIT_TARGET_POS[0])
@@ -824,9 +849,10 @@ def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_ta
 
 
 
-def get_dist_object_target(env):
+def get_dist_object_target(env, cube_color_input):
     # voglio salvare se -> 
-    current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    object = get_object_from_color(cube_color_input)
+    current_object_pose = env.unwrapped.scene[object].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
 
     distance_object_target = np.linalg.norm(current_object_pose[:2] - current_target_pose[:2]) # only x, y
@@ -883,11 +909,13 @@ def run_simulator(env, args_cli):
     task_completed = False
     cube_color_input = CUBE_COLOR_STR
     task_instruction = OPENVLA_INSTRUCTION
+    saved_stats_cnt = 0
+    max_stats_saved = 105
 
     valid_task = True
 
-    if SAVE_STATS:
-        save_stats_file = input("Specify the name of the file to save stats: ")
+    # if SAVE_STATS:
+    #     save_stats_file = input("Specify the name of the file to save stats: ")
 
     initial_camera_pose = np.array([CAMERA_POSITION])
     simulation_step = 600
@@ -899,15 +927,16 @@ def run_simulator(env, args_cli):
             if count == 0:
                 valid_task = check_valid_task(env) 
 
-            distance_object_target = get_dist_object_target(env)
+            distance_object_target = get_dist_object_target(env, cube_color_input)
 
             task_completed = check_task_completed(env, robot, cube_color_input)
             if task_completed and simulation_step==600:
                 simulation_step = count
 
             if count == 0:
+                object = get_object_from_color(cube_color_input)
                 initial_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
-                initial_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+                initial_object_pose = env.unwrapped.scene[object].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
                 des_state = get_init_des_state(env)
                 ee_prev_pos = torch.tensor(des_state[:, :3], device=env.unwrapped.device)
                 ee_prev_quat = torch.tensor(des_state[:, 3:7], device=env.unwrapped.device)
@@ -952,13 +981,18 @@ def run_simulator(env, args_cli):
             if count == 0 and not SAVE_STATS:
                 cube_color_input = input("Enter the color of the cube (green, blue, yellow): ")
                 task_instruction = f"Pick the {cube_color_input} cube and place it on the red area. \n"
+            
+                
 
 
             if dones.any():
 
                 if SAVE_STATS and valid_task:
+                    saved_stats_cnt += 1
                     save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
-
+                    if saved_stats_cnt >= max_stats_saved:
+                        print("Collected Enough stats. Closing the simulation.")
+                        simulation_app.close()
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
                     initial_camera_pose = set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
@@ -966,6 +1000,16 @@ def run_simulator(env, args_cli):
                 set_new_goal_pose(env) # set the new box (goal) position in simulation 
             
                 count = 0
+
+                if SAVE_STATS:
+                    if saved_stats_cnt > max_stats_saved *2/3:
+                        cube_color_input = "yellow"
+                    elif saved_stats_cnt > max_stats_saved/3:
+                        cube_color_input = "blue"
+                    else:
+                        cube_color_input = "green"
+                    print("\n\nCUBE COLOR: ", cube_color_input, "\n\n")
+                    task_instruction = f"Pick the {cube_color_input} cube and place it on the red area. \n"
                 global current_step_index
                 current_step_index = 0
                 task_count += 1

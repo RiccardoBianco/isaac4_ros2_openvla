@@ -6,9 +6,25 @@ CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 SAVE_STATS = True
-SAVE_STATS_DIR = "./isaac_ws/src/stats/"
 
-RANDOM_CAMERA = False
+CAMERA_X_RANGE = (-0.2, 0.2)
+CAMERA_Y_RANGE = (-0.2, 0.2)
+CAMERA_Z_RANGE = (-0.2, 0.2)
+
+save_stats_file = "single_green_r_all_camerainrange.json"
+
+# #### TEST 2 ####
+# save_stats_file = "single_green_r_all_rangeyout_+10.json"
+# CAMERA_Y_RANGE = (0.2, 0.3)
+
+# #### TEST 3 ####
+save_stats_file = "single_green_r_all_rangeyout_-10.json"
+CAMERA_Y_RANGE = (-0.3, -0.2)
+
+
+SAVE_STATS_DIR = "./isaac_ws/src/stats/single_green_r_all_12+5%" # TODO set the right percentage
+
+RANDOM_CAMERA = True
 RANDOM_OBJECT = True
 RANDOM_TARGET = True
 
@@ -52,9 +68,7 @@ CAMERA_TARGET = [0.4, 0.0, 0.0]
 CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
 
 
-CAMERA_X_RANGE = (-0.2, 0.2)
-CAMERA_Y_RANGE = (-0.2, 0.2)
-CAMERA_Z_RANGE = (-0.2, 0.2)
+
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.2 + INIT_TARGET_POS[0])
@@ -580,10 +594,10 @@ def adaptive_check_des_state_reached(current_state, desired_state, angle_thresho
     adaptation_state.prev_position_error = position_error
 
     if position_error < adaptation_state.position_threshold and angle_error < angle_threshold and gripper_correct:
-        print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        #print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
         return True
     else:
-        print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        #print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
         return False
 
 
@@ -613,10 +627,11 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
     # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
     # angle_deg = np.degrees(angle_error.item())
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
-        print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        #print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
         return True
     else:
-        print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        #print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        pass
     return False
 
 # def set_new_random_camera_pose(env, camera):
@@ -670,8 +685,8 @@ def check_task_completed(env, robot):
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
     if distance_object_target < 0.06 and distance_object_ee > 0.15:
-        print("Task completed! Distance: ", distance_object_target)
-        print("Distance between object and end effector: ", distance_object_ee)
+        #print("Task completed! Distance: ", distance_object_target)
+        #print("Distance between object and end effector: ", distance_object_ee)
         return True
     return False
 
@@ -755,12 +770,14 @@ def run_simulator(env, args_cli):
     
     valid_task = True
 
-    if SAVE_STATS:
-        save_stats_file = input("Specify the name of the file to save stats: ")
+    # if SAVE_STATS:
+    #     save_stats_file = input("Specify the name of the file to save stats: ")
 
     goal_reached = False
     task_completed = False
     simulation_step = 600
+    saved_stats_cnt = 0
+    max_saved_stats = 104
 
     initial_camera_pose = np.array([CAMERA_POSITION])
     while simulation_app.is_running():
@@ -822,7 +839,11 @@ def run_simulator(env, args_cli):
             if dones.any():
                 
                 if SAVE_STATS and valid_task:
+                    saved_stats_cnt += 1
                     save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
+                    if saved_stats_cnt >= max_saved_stats:
+                        print("Collected enough stats. Closing the simulation.")
+                        simulation_app.close()
 
                 print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:

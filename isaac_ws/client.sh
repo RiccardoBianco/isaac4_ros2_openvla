@@ -19,4 +19,4 @@ if [[ -z "$TYPE" ]]; then
 fi
 
 # Run the actual Isaac Lab script with the chosen type
-isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/evaluate_openvla_"$TYPE".py --enable_cameras --save
+./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/evaluate_openvla_"$TYPE".py --enable_cameras --save --headless
