@@ -54,14 +54,17 @@ SERVER_SIDE_FOLDER = "server_side_images"
 DEFAULT_IMAGE_NAME = "received_image"
 BASE_MODEL = "openvla/openvla-7b"
 
-# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_green_noaug_PERFECT"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/single_green_r_cub_r_tar_s_cam_noaug"
 #FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_s_cube_r_camera_r_target_17500_noaug"
 # FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/random_multi_cube_noaug"
 # FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_s_cub_r_tar_r_cam_noaug_17500"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_s_cub_r_tar_s_cam_noaug_22500"
+FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/multi_r_all_noaug_70000"
 
-FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/single_green_r_all_noaug_75000"
+# FINETUNED_MODEL = "/home/wanghan/Desktop/PLRItalians/isaac4_ros2_openvla/models/single_green_r_all_12+5%_950_noaug"
 
-OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path
+
+OPENVLA_MODEL = FINETUNED_MODEL  # ^ Change this to the desired model path 
 
 SAVE_IMAGES = True
 
