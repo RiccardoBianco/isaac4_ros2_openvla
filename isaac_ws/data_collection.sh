@@ -8,13 +8,14 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         -m|--multicube) TYPE="multicube"; shift ;;
         -s|--singlecube) TYPE="singlecube"; shift ;;
+        -r|--real) TYPE="real_objects"; shift ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
 done
 
 # Check if type was set
 if [[ -z "$TYPE" ]]; then
-    echo "Error: You must specify either -m (multicube) or -s (singlecube)."
+    echo "Error: You must specify either -m (multicube) or -s (singlecube) or -r (real)."
     echo "Usage: $0 -m | -s"
     exit 1
 fi
