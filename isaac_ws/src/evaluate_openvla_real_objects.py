@@ -1,11 +1,55 @@
-OBJECT_TO_PICK = "object1"  # The object to pick
 
-# 280 salvate con la cracker_box
+OPENVLA_RESPONSE = False
+OBJECT_TO_PICK1 = "object3"
+OBJECT_TO_PICK2 = "object2"
+OBJECT_TO_PICK3 = "object3"
+COMPLEX_INSTRUCTION = False
 
 
-RANDOM_CAMERA = True
+RANDOM_CAMERA = False
+RANDOM_CAMERA_EVERY_VLA_STEP = False
+
 RANDOM_OBJECT = True
 RANDOM_TARGET = False
+
+
+
+
+GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0009.npy"
+CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
+
+SAVE_STATS = False
+
+CAMERA_Y_RANGE = (-0.1, 0.1) # -0.1, 0.1 -> testo su 0.1, 0.2 e su -0.2, -0.1 -> poi testo su 0.2, 0.3  e -0.3, -0.2
+CAMERA_Z_RANGE = (-0.1, 0.1)
+CAMERA_X_RANGE = (-0.1, 0.1)
+
+save_stats_file = "real_objs.json"
+
+# #### TEST 2 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_-10.json"
+# CAMERA_Y_RANGE = (-0.2, -0.1)
+
+# #### TEST 3 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_+10.json"
+# CAMERA_Y_RANGE = (0.1, 0.2)
+
+# #### TEST 4 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_-20.json"
+# CAMERA_Y_RANGE = (-0.3, -0.2)
+
+# #### TEST 5 ####
+# save_stats_file = "multi_s_cub_r_tar_r_cam_rangeyout_+20.json"
+# CAMERA_Y_RANGE = (0.2, 0.3)
+
+
+
+
+
+SAVE_STATS_DIR = "./isaac_ws/src/stats/real_objs" # TODO set the right percentage
+
+
+
 
 import argparse
 
@@ -13,9 +57,7 @@ from isaaclab.app import AppLauncher
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Pick and lift state machine for lift environments.")
-parser.add_argument(
-    "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
-)
+parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--camera_id", type=int, choices={0, 1}, default=0, help=("The camera ID to use for displaying points or saving the camera data. Default is 0." " The viewport will always initialize with the perspective of camera 0."),)
 parser.add_argument("--renderer", type=str, default="RayTracedLighting", help="Renderer to use. Options: 'RayTracedLighting', 'PathTracing'.")
@@ -37,11 +79,19 @@ import torch
 from collections.abc import Sequence
 from PIL import Image
 
+
 import numpy as np
 import os
 import shutil
 from datetime import datetime
 import json
+from scipy.spatial.transform import Rotation
+
+from PIL import Image
+import json_numpy
+import yaml
+import requests
+import random
 
 from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
 
@@ -54,14 +104,12 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.manager_based.manipulation.lift import mdp
-from isaaclab_tasks.manager_based.manipulation.lift.env_data_real_objects import LiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.env_eval_real_objects import LiftEnvCfg
 import isaaclab.sim as sim_utils
 import omni.replicator.core as rep
 from isaaclab.utils.math import subtract_frame_transforms
-from isaaclab.managers import SceneEntityCfg
 ##
 # Pre-defined configs
 ##
@@ -75,17 +123,14 @@ from isaaclab.utils import convert_dict_to_backend
 
 from pxr import UsdGeom, Usd, UsdShade
 
-
-
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.sim.spawners import UsdFileCfg
-from pxr import Usd, UsdPhysics, UsdGeom, UsdShade
+
 ##
 # Pre-defined configs
 ##
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: skip
-
 
 
 if RANDOM_OBJECT:
@@ -125,7 +170,8 @@ objects = {
         "x_range": object_random_range,  # APPLIED TO EVERY OBJECT
         "y_range": object_random_range,
         "z_range": (0.0, 0.0),
-        "scale": (0.6, 0.6, 0.6)  # Scale the object to fit better in the scene
+        "scale": (0.6, 0.6, 0.6),  # Scale the object to fit better in the scene
+        "height_offset": 0.25
     },
     "tomato_can": {
         "path": f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd", # -> terzo oggetto
@@ -136,7 +182,8 @@ objects = {
         "x_range": object_random_range,  # APPLIED TO EVERY OBJECT
         "y_range": object_random_range,
         "z_range": (0.0, 0.0),
-        "scale": (0.8, 0.8, 0.8)  # Scale the object to fit better in the scene
+        "scale": (0.8, 0.8, 0.8),  # Scale the object to fit better in the scene
+        "height_offset": 0.15
     },
     "pencil_case": {
         "path":  os.path.abspath("./isaac_ws/assets/Pinwheel_Pencil_Case/meshes/_converted/model_obj.usd"),
@@ -147,7 +194,8 @@ objects = {
         "x_range": (-0.05, 0.05),  # APPLIED TO EVERY OBJECT
         "y_range": (0.0, 0.1),
         "z_range": (0.0, 0.0),
-        "scale": (0.7, 0.7, 0.7)  # Scale the object to fit better in the scene
+        "scale": (0.7, 0.7, 0.7),  # Scale the object to fit better in the scene
+        "height_offset": 0.15
     },
     "thomas_train": {
         "path": os.path.abspath("./isaac_ws/assets/Thomas_Friends_Woodan_Railway_Henry/meshes/_converted/model_obj.usd"),
@@ -158,7 +206,8 @@ objects = {
         "x_range": (-0.1, 0.1),  # APPLIED TO EVERY OBJECT
         "y_range": (0.0, 0.0),
         "z_range": (0.0, 0.0),
-        "scale": (1.1, 1.1, 1.1)  # Scale the object to fit better in the scene
+        "scale": (1.1, 1.1, 1.1),  # Scale the object to fit better in the scene
+        "height_offset": 0.15
     },
     "dog": {
         "path": os.path.abspath("./isaac_ws/assets/Dog/meshes/_converted/model_obj.usd"),
@@ -180,7 +229,8 @@ objects = {
         "x_range": object_random_range,  # APPLIED TO EVERY OBJECT
         "y_range": object_random_range,
         "z_range": (0.0, 0.0),
-        "scale": (1.1, 1.1, 1.1)  # Scale the object to fit better in the scene
+        "scale": (1.1, 1.1, 1.1),  # Scale the object to fit better in the scene
+        "height_offset": 0.15
     },
 }
 
@@ -193,50 +243,32 @@ OBJECTS = {
     "object6": "thomas_train",
 }
 
-SAMPLES_PER_OBJECT = 700 # Number of samples per object
 
 
-
-
-
-
-INIT_TARGET_POS = [0.50, -0.35, 0.0]  # Z must be 0 in OpenVLA inference script
+INIT_TARGET_POS = [0.50, -0.35, 0.0]
 INIT_ROBOT_POSE = [0.4, 0.0, 0.35, 0.0, 1.0, 0.0, 0.0]
 
-OPENVLA_INSTRUCTION = f"Pick the {OBJECTS[OBJECT_TO_PICK]} and place it in the brown box. \n" 
 
-SEED = 50
-
-
-SAVE = True
-
-CAMERA_HEIGHT = 1920
-CAMERA_WIDTH = 1920
-OPENVLA_CAMERA_HEIGHT = 256
-OPENVLA_CAMERA_WIDTH = 256
-
-CAMERA_POSITION = [1.0, -0.18, 0.6]
-CAMERA_TARGET = [0.4, 0.0, 0.0]
-
-
-# OFFSET_EE = OBJECT_SIZE[2] / 2 - 0.01 + 0.107 # 0.01 settato a mano a naso
-SPECIFIC_OFFSET_EE = objects[OBJECTS[OBJECT_TO_PICK]]["specific_offset_ee"]  # Specific offset for the object
-NATURAL_OFFSET_EE = 0.107  # Natural offset for the end effector
-OFFSET_EE = SPECIFIC_OFFSET_EE + NATURAL_OFFSET_EE # 0.01 settato a mano a naso
-
-ABOVE_TARGET_OFFSET = 0.15
-ABOVE_OBJECT_OFFSET = 0.15
+if not OPENVLA_RESPONSE:
+    import numpy as np
+    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+    step = episode[0]
+    # if 'target_pose' in step:
+    #     INIT_TARGET_POS = step['target_pose'][0, :3]
+    objects[OBJECTS[OBJECT_TO_PICK1]]["init_pos"] = step['object_pose'][0, :3]
+    objects[OBJECTS[OBJECT_TO_PICK1]]["x_range"] = (0.0, 0.0)
+    objects[OBJECTS[OBJECT_TO_PICK1]]["y_range"] = (0.0, 0.0)
+    objects[OBJECTS[OBJECT_TO_PICK1]]["z_range"] = (0.0, 0.0) 
+    # TODO -> Load everything from episode
 
 
 
+OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
+OPENVLA_INSTRUCTION = f"Place the {OBJECTS[OBJECT_TO_PICK1]} in the brown box.\n"
 
 
 
-
-CAMERA_X_RANGE = (-0.05, 0.05)
-CAMERA_Y_RANGE = (-0.05, 0.05)
-CAMERA_Z_RANGE = (-0.05, 0.05)
-
+SEED = 777
 
 if RANDOM_TARGET: # ABSOLUTE POSITION
     TARGET_X_RANGE = (-0.2 + INIT_TARGET_POS[0], 0.3 + INIT_TARGET_POS[0])
@@ -247,7 +279,110 @@ else:
     TARGET_Y_RANGE = (INIT_TARGET_POS[1], INIT_TARGET_POS[1])
     TARGET_Z_RANGE = (INIT_TARGET_POS[2], INIT_TARGET_POS[2])
 
+
+
+CAMERA_HEIGHT = 1920
+CAMERA_WIDTH = 1920
+OPENVLA_CAMERA_HEIGHT = 256
+OPENVLA_CAMERA_WIDTH = 256
+
+CAMERA_POSITION = [1.0, -0.18, 0.6]
+CAMERA_TARGET = [0.4, 0.0, 0.0]
+
+
+
+
 EULER_NOTATION = "zyx" 
+
+if COMPLEX_INSTRUCTION:
+    OPENVLA_INSTRUCTION += f"Place the {OBJECTS[OBJECT_TO_PICK2]} in the brown box.\n"
+    OPENVLA_INSTRUCTION += f"Place the {OBJECTS[OBJECT_TO_PICK3]} in the brown box.\n"
+
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+    # Carica il modello Flan-T5 base (puoi usare anche flan-t5-large o flan-t5-xl se vuoi più potenza)
+    model_name = "google/flan-t5-large"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    # Istruzione complessa
+    instruction = OPENVLA_INSTRUCTION
+
+    prompt = (
+        "Break down each instruction into simple, numbered steps.\n\n"
+        "Instruction: Place the box in the brown box, then place the cup in the brown box, and finally place the spoon in the brown box.\n"
+        "Steps:\n"
+        "1. Place the box in the brown box.\n"
+        "2. Place the cup in the brown box.\n"
+        "3. Place the spoon in the brown box.\n\n"
+        "Instruction: Place the ball in the brown box, then place the bottle in the brown box, and finally place the fork in the brown box.\n"
+        "Steps:\n"
+        "1. Place the ball in the brown box.\n"
+        "2. Place the bottle in the brown box.\n"
+        "3. Place the fork in the brown box.\n\n"
+        "Instruction: Place the fork in the brown box, then place the phone in the brown box, and finally place the paper bin in the brown box.\n"
+        "Steps:\n"
+        "1. Place the fork in the brown box.\n"
+        "2. Place the phone in the brown box.\n"
+        "3. Place the paper bin in the brown box.\n\n"
+        f"Instruction: {instruction}"
+        "Steps:"
+    )
+
+    # Tokenizza e genera l'output
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = model.generate(**inputs, max_new_tokens=300)
+    result = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    print("Decomposed steps:")
+    print(result)
+
+    import re
+    parts = re.split(r'\d+\.\s*', result)
+    # Rimuove la prima parte vuota (prima del "1.")
+    instructions = [p.strip().rstrip('.') for p in parts if p]
+
+    print(instructions)
+else:
+    instructions = [OPENVLA_INSTRUCTION.strip()]
+
+
+json_numpy.patch()
+
+def set_server_url():
+    # if user is "wanghan"
+    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+    if user == "wanghan":
+        server_url = "http://0.0.0.0:8000/act"
+    else:
+        print("Current working directory:", os.getcwd())
+
+        config_path = os.path.abspath("./isaac_ws/src/config.yaml")  # assuming you are in /root/isaac_ws folder
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        ip_address = config["ip_address"]
+        port = config["port"]
+        server_url = f'http://{ip_address}:{port}/act'
+        print(f"Server URL: {server_url}")
+
+    return server_url
+
+
+SERVER_URL = set_server_url()
+
+def send_request(payload):
+
+    # Send POST request to the server
+    response = requests.post(SERVER_URL, json=payload)
+
+    # Check the response
+    if response.status_code == 200:
+        #print("Response from server:", response.json())
+        return response.json()
+    else:
+        #print("Error:", response.status_code, response.text)
+        return None
 
 
 def scalar_first_to_last(q):
@@ -259,8 +394,6 @@ def scalar_last_to_first(q):
     x, y, z, w = q
     return [w, x, y, z]
 
-import numpy as np
-from scipy.spatial.transform import Rotation
 
 def compute_delta(ee_pose, next_ee_pose):
     """
@@ -299,8 +432,35 @@ def compute_delta(ee_pose, next_ee_pose):
     return delta
 
 
+def apply_delta(position, orientation, delta, env):
+    """
+    Apply a delta (in EE frame) to a pose in the world frame,
+    using quaternions internally.
+    Input:
+        - position: (x, y, z) world
+        - orientation: (w, x, y, z) quaternion world (scalar-first)
+        - delta: array (7,) [dx, dy, dz, dr, dp, dy, gripper]
+    Output:
+        - new_pose: array (7,) [x, y, z, qw, qx, qy, qz]
+    """
+    # Build current rotation
+    q_world = Rotation.from_quat(scalar_first_to_last(orientation))
 
+    # Translate in world using EE-frame delta
+    world_delta = q_world.apply(delta[:3])
+    new_position = position + world_delta
 
+    # Build rotation delta quaternion
+    q_delta = Rotation.from_euler(EULER_NOTATION, delta[3:6])
+    # Compose rotations
+    q_new = q_world * q_delta
+
+    # Convert back to Isaac format (scalar-first)
+    new_orientation = scalar_last_to_first(q_new.as_quat())
+
+    ee_pose =  np.concatenate([new_position, new_orientation])
+    ee_pose = torch.tensor(ee_pose, device=env.unwrapped.device)
+    return ee_pose
 
 
 @configclass
@@ -641,192 +801,11 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             ),
         )
 
-        self.scene.wrist_camera = CameraCfg(
-            prim_path="/World/envs/env_0/Robot/panda_hand/WristCameraSensor",
-            update_period=0,
-            height=CAMERA_HEIGHT,
-            width=CAMERA_WIDTH,
-            data_types=[
-                "rgb",
-            ],
-            colorize_semantic_segmentation=True,
-            colorize_instance_id_segmentation=True,
-            colorize_instance_segmentation=True,
-            spawn=sim_utils.PinholeCameraCfg(
-                #focal_length=24.0, focus_distance=400.0, horizontal_aperture=20.955, clipping_range=(0.1, 1.0e5)
-                focal_length=24.0,         # Wider view
-                focus_distance=400.0,     # Farther focus (everything is sharp)
-                horizontal_aperture=30.0,  # Wider aperture = more stuff in view, but can reduce blur too
-            ),
-             offset=CameraCfg.OffsetCfg(pos=(0.05, 0.0, 0.0), rot=(0.707, 0.0, 0.0, 0.707), convention="ros"),
-        )
 
 class GripperState:
     """States for the gripper."""
     OPEN = 1.0
     CLOSE = -1.0
-
-class SmState:
-    """States for the pick state machine."""
-
-    ROBOT_INIT_POSE = 0
-    APPROACH_ABOVE_OBJECT = 1
-    APPROACH_OBJECT = 2
-    GRASP_OBJECT = 3
-    LIFT_OBJECT = 4
-    PLACE_ABOVE_GOAL = 5
-    PLACE_ON_GOAL = 6
-    RELEASE_OBJECT = 7
-    MOVE_ABOVE_GOAL = 8
-    TERMINAL_STATE = 9 
-
-
-class SmWaitTime:
-    """Additional wait times (in s) for states for before switching."""
-
-    ROBOT_INIT_POSE = 1.0
-    APPROACH_ABOVE_OBJECT = 0.8
-    APPROACH_OBJECT = 0.6
-    GRASP_OBJECT = 0.3
-    LIFT_OBJECT = 0.5
-    PLACE_ABOVE_GOAL = 1.0 # 0.1 molto fluido -> diretto al goal 
-    PLACE_ON_GOAL = 0.6
-    RELEASE_OBJECT = 0.4
-    MOVE_ABOVE_GOAL = 0.5
-    TERMINAL_STATE = 1.0 
-
-
-
-def check_pose_reached(current_state, desired_state, position_threshold, angle_threshold):
-    """
-        Check if the current position is within the threshold of the desired position.
-        Returns True if the goal is reached, False otherwise.
-        state: [x, y, z, qw, qx, qy, qz]
-
-    """
-    position_error = torch.norm(current_state[:, :3] - desired_state[:, :3], dim=1)
-
-    quat_dot = torch.abs(torch.sum(current_state[:, 3:7] * desired_state[:, 3:7], dim=1))  # q1 · q2
-    quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
-    angle_error = 2 * torch.acos(quat_dot)
-
-
-    if position_error.item() < position_threshold and angle_error.item() < angle_threshold:
-        angle_deg = np.degrees(angle_error.item())
-        # print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_deg:.4f}°")
-        return True
-    return False
-
-class StateMachine:
-    """A simple state machine to pick and lift an object."""
-
-    def __init__(self, dt: float, device: torch.device | str = "cpu"):
-        """Initialize the state machine.
-
-        Args:
-            dt: The environment time step.
-            device: The device to run the state machine on.
-        """
-        # save parameters
-        self.dt = float(dt)
-        self.sm_wait_time = 0.0
-        self.device = device
-
-        self.sm_dt = torch.tensor(self.dt, device=self.device)
-        self.sm_state = SmState.ROBOT_INIT_POSE
-        self.sm_wait_time = SmWaitTime.ROBOT_INIT_POSE
-    
-    def reset(self):
-        """Reset the state machine."""
-        self.sm_wait_time = 0.0
-        self.sm_state = SmState.ROBOT_INIT_POSE
-
-    def get_des_pose(self, ee_current_pose, init_pose, initial_object_pose, target_pose, offset_ee):
-        
-        init_pose = init_pose.clone()
-        initial_object_pose = initial_object_pose.clone()
-        target_pose = target_pose.clone()
-        init_pose[:, 2] += NATURAL_OFFSET_EE
-        initial_object_pose[:, 2] += offset_ee
-        target_pose[:, 2] += offset_ee 
-
-        # attorno a x di 180 ->  [-x, w, -z, y]
-        # attorno a y di 180 -> [-y, z, w, -x]
-        quat_down = torch.tensor([[0.0, 1.0, 0.0, 0.0]], device=initial_object_pose.device)  # shape [1, 4]
-
-        initial_object_pose[:, 3:7] = quat_down
-        target_pose[:, 3:7] = quat_down
-
-        above_initial_object_pose = initial_object_pose.clone()
-        above_target_pose = target_pose.clone()
-        above_target_pose[:, 2] += ABOVE_TARGET_OFFSET
-        above_initial_object_pose[:, 2] += ABOVE_OBJECT_OFFSET
-
-
-
-        if self.sm_state == SmState.ROBOT_INIT_POSE:
-            des_ee_pose = init_pose
-            gripper_state = GripperState.OPEN
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.ROBOT_INIT_POSE:
-                self.sm_state = SmState.APPROACH_ABOVE_OBJECT
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.APPROACH_ABOVE_OBJECT:
-            des_ee_pose = above_initial_object_pose
-            gripper_state = GripperState.OPEN
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_ABOVE_OBJECT:
-                self.sm_state = SmState.APPROACH_OBJECT
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.APPROACH_OBJECT:
-            des_ee_pose = initial_object_pose
-            gripper_state = GripperState.OPEN
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.APPROACH_OBJECT:
-                self.sm_state = SmState.GRASP_OBJECT
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.GRASP_OBJECT:
-            des_ee_pose = initial_object_pose
-            gripper_state = GripperState.CLOSE
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) and self.sm_wait_time >= SmWaitTime.GRASP_OBJECT:
-                self.sm_state = SmState.LIFT_OBJECT
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.LIFT_OBJECT:
-            des_ee_pose = above_initial_object_pose
-            gripper_state = GripperState.CLOSE
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.LIFT_OBJECT:
-                self.sm_state = SmState.PLACE_ABOVE_GOAL
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.PLACE_ABOVE_GOAL:
-            des_ee_pose = above_target_pose
-            gripper_state = GripperState.CLOSE
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.PLACE_ABOVE_GOAL:
-                self.sm_state = SmState.PLACE_ON_GOAL
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.PLACE_ON_GOAL:
-            des_ee_pose = target_pose
-            gripper_state = GripperState.CLOSE
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.PLACE_ON_GOAL:
-                self.sm_state = SmState.RELEASE_OBJECT
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.RELEASE_OBJECT:
-            des_ee_pose = target_pose
-            gripper_state = GripperState.OPEN
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.02, 0.02) and self.sm_wait_time >= SmWaitTime.RELEASE_OBJECT:
-                self.sm_state = SmState.MOVE_ABOVE_GOAL
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.MOVE_ABOVE_GOAL:
-            des_ee_pose = above_target_pose
-            gripper_state = GripperState.OPEN
-            if check_pose_reached(ee_current_pose, des_ee_pose, 0.005, 0.005) or self.sm_wait_time >= SmWaitTime.MOVE_ABOVE_GOAL:
-                self.sm_state = SmState.TERMINAL_STATE
-                self.sm_wait_time = 0.0
-        elif self.sm_state == SmState.TERMINAL_STATE:
-            des_ee_pose = above_target_pose
-            gripper_state = GripperState.OPEN
-
-        self.sm_wait_time += self.sm_dt.item() # TODO CHECK
-
-        des_gripper_state = torch.tensor([gripper_state], device=self.device)
-        return torch.cat([des_ee_pose, des_gripper_state.unsqueeze(-1)], dim=-1)
-
 
 
 def assign_material(object_path, material_path):
@@ -845,171 +824,211 @@ def assign_material(object_path, material_path):
     else:
         print("Errore: Primitiva o materiale non trovati.")
 
-def take_image(camera_index, camera, camera_type, sim_num):
+def hide_prim(prim_path: str):
+    stage = omni.usd.get_context().get_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+
+    if prim and prim.IsValid():
+        UsdGeom.Imageable(prim).MakeInvisible()
+        print(f"✅ Hidden prim: {prim_path}")
+    else:
+        print(f"⚠️ Prim '{prim_path}' not found or invalid.")
+
+
+def take_image(camera_index, camera):
     """
     Take an image from the camera and save it using the replicator writer.
     Args:
         camera_index: Index of the camera to use.
         camera: The camera object.
-        rep_writer: The replicator writer object.
     """
-    if args_cli.save:
-        # Save images from camera at camera_index
-        # note: BasicWriter only supports saving data in numpy format, so we need to convert the data to numpy.
-        single_cam_data = convert_dict_to_backend(
-            {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
-        )
 
+    # Save images from camera at camera_index
+    single_cam_data = convert_dict_to_backend(
+        {k: v[camera_index] for k, v in camera.data.output.items()}, backend="numpy"
+    )
+    image_data = single_cam_data.get('rgb')
 
-        # Extract the image data (assuming 'rgb' is the key)
-        image_data = single_cam_data.get('rgb')
+    if image_data is not None:
+        image_data = image_data.astype(np.uint8)
+        high_res_image = Image.fromarray(image_data)
 
+        low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
 
-        
-        if image_data is not None:
-            image_data = image_data.astype(np.uint8)
-            high_res_image = Image.fromarray(image_data)
-
-            low_res_image = high_res_image.resize((OPENVLA_CAMERA_HEIGHT, OPENVLA_CAMERA_WIDTH), Image.BICUBIC)
-
-            if sim_num <= 10:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                file_name = f"{camera_type}_{timestamp}.png"
-
-                folder_dir = f"./isaac_ws/src/output/camera/simulation_{sim_num}"
-                os.makedirs(folder_dir, exist_ok=True)
-                file_path = os.path.join(folder_dir, file_name)
-
-                # Save image as RGB PNG
-                low_res_image.save(file_path)
-
-
-                
-            return np.array(low_res_image)
+        return np.array(low_res_image)
 
     return None 
 
-def get_current_state(robot):
-    joint_pos = robot.data.joint_pos.clone()
-    ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
-    root_pose_w = robot.data.root_state_w[:, 0:7]
+def get_init_des_state(env):
+    # init_robot_pose_with_offset = INIT_ROBOT_POSE.copy()
+    # init_robot_pose_with_offset[2] += objects[OBJECTS[object_to_pick]]["specific_offset_ee"]
+    robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device)
+    gripper = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+    init_ee_pose = torch.cat([robot_init_pose, gripper], dim=-1) # shape: (8,) -> x, y, z, qw, qx, qy, qz, gripper_state
+    return init_ee_pose.unsqueeze(0) # shape: (1, 8)
 
-    # posizione dell'end-effector relativa al root
-    ee_pos_b, ee_quat_b = subtract_frame_transforms(
-        root_pose_w[:, 0:3], root_pose_w[:, 3:7],
-        ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
-    )
-    # print("joint_pos: ", joint_pos)
-    # print("joint_pose shape: ", joint_pos.shape)
-    gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
-    # print("gripper_state: ", gripper_state.shape)
-    # print("gripper_state: ", gripper_state)
-    quat_np = scalar_first_to_last(ee_quat_b[0].cpu().numpy())  # shape (4,)
-    R_euler_np = Rotation.from_quat(quat_np).as_euler(EULER_NOTATION) # shape (3,)
-    R_euler = torch.tensor(R_euler_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
-    pad = torch.tensor([[0.0]], device=ee_pos_b.device)
-    current_state = torch.cat([ee_pos_b, R_euler, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
-    #current_state = torch.cat([ee_pos_b, R_euler, gripper_state], dim=-1) # shape: (1, 7)
-    return current_state
-                
-
-def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"):
-    """
-    Save a list of timestep dictionaries into a progressively numbered .npy file.
-    
-    Args:
-        episode_steps (List[dict]): Each step must include keys like "state", "action", "image", etc.
-        save_dir (str): Directory where .npy episodes are stored.
-    """
-    # folder_name = "episodes"
-    # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
-
-    # Check on the final state of the object wrt the target
-    distance_object_target = np.linalg.norm(episode_steps[-1]["object_pose"][:, :3] - episode_steps[-1]["target_pose"][:, :3])
-    if distance_object_target > 0.08:
-        print("Episode not saved: object is too far from the target.")
-        return 0
-    
-    distance_object_target_start = np.linalg.norm(episode_steps[0]["object_pose"][:, :3] - episode_steps[0]["target_pose"][:, :3])
-    if distance_object_target_start < 0.10:
-        print("Episode not saved: object is too close to the target at the start.")
-        return 0
-            
-    for i in range(len(episode_steps)-1):
-        episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
-        # print("Step: ", i)
-        # print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
-        # print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
-    
-    episode_steps[-1]["action"] = compute_delta(episode_steps[-1]["state"], episode_steps[-1]["state"])
-
-    os.makedirs(save_dir, exist_ok=True)
-
-    # Get next available episode number
-    existing = [f for f in os.listdir(save_dir) if f.startswith("episode_") and f.endswith(".npy")]
-    episode_nums = [int(f.split("_")[1].split(".")[0]) for f in existing if "_" in f]
-    next_num = max(episode_nums) + 1 if episode_nums else 0
-    if next_num > 6000: 
-        simulation_app.close()
-        print("Maximum number of episodes reached. Exiting...")
-        exit(0)
-
-    filename = f"episode_{next_num:04d}.npy"
-    filepath = os.path.join(save_dir, filename)
-
-    # Save
-    np.save(filepath, episode_steps, allow_pickle=True)
-    print(f"✅ Saved episode with {len(episode_steps)} steps to {filepath}")
-    return next_num
-
-    
-def is_significant_change(delta, grasped_bool_vec, pos_th, rot_th, sm_state):
-    grasp_start_saved, grasp_end_saved, release_start_saved, release_end_saved = grasped_bool_vec
-
-    updated_vec = grasped_bool_vec
-    if sm_state == SmState.GRASP_OBJECT:
-        if not grasp_start_saved:
-            updated_vec = [True, grasp_end_saved, release_start_saved, release_end_saved]
-            return True, updated_vec
-        else:
-            return False, updated_vec
-
-    elif sm_state == SmState.LIFT_OBJECT:
-        if grasp_start_saved and not grasp_end_saved:
-            updated_vec = [grasp_start_saved, True, release_start_saved, release_end_saved]
-            return True, updated_vec
-        else:
-            return False, updated_vec
-
-    elif sm_state == SmState.RELEASE_OBJECT:
-        if not release_start_saved:
-            updated_vec = [grasp_start_saved, grasp_end_saved, True, release_end_saved]
-            return True, updated_vec
-        else:
-            return False, updated_vec
-
-    elif sm_state == SmState.MOVE_ABOVE_GOAL:
-        if release_start_saved and not release_end_saved:
-            updated_vec = [grasp_start_saved, grasp_end_saved, release_start_saved, True]
-            return True, updated_vec
-
-
-    dx, dy, dz, droll, dpitch, dyaw, gripper = delta
-    pos_change = np.linalg.norm([dx, dy, dz]) > pos_th
-    rot_change = np.linalg.norm([droll, dpitch, dyaw]) > rot_th
-    return pos_change or rot_change, updated_vec
-
-
-def get_current_ee(robot):
+def get_current_state(robot, env):
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     root_pose_w = robot.data.root_state_w[:, 0:7]
     ee_pos_b, ee_quat_b = subtract_frame_transforms(
         root_pose_w[:, 0:3], root_pose_w[:, 3:7],
         ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
-    current_state = torch.cat([ee_pos_b, ee_quat_b], dim=-1) # (1, 7)
+    current_gripper_state = robot.data.joint_pos.clone()[:, -1] 
+    # if current_gripper_state < 0.03: # TODO fix this
+    #     current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+    # else:
+    #     current_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
+    
+    current_state = torch.cat([ee_pos_b, ee_quat_b, current_gripper_state.unsqueeze(-1)], dim=-1) # (1, 8)
     return current_state
 
+def set_new_goal_pose(env):
+    goal_pose = env.unwrapped.command_manager.get_command("target_pose")
+    new_pos = goal_pose[..., :3].clone()
+    new_pos[..., 2] = 0.0
+    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
+
+    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
+    root_state[:, 0:3] = new_pos
+    root_state[:, 3:7] = new_rot
+    # Scrive la nuova pose alla simulazione
+    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
+
+def get_openvla_res(camera_index, camera, openvla_instruction):
+    image_array = take_image(camera_index, camera)
+    payload = {
+        "image": image_array,  # Sending as numpy array, no conversion to list
+        "instruction": openvla_instruction,
+        "unnorm_key": OPENVLA_UNNORM_KEY  # Add the unnorm_key to the payload
+    }
+    #Send request to the server
+    print("Sending request to OpenVLA...")
+    res = send_request(payload)
+    if res is None:
+        print("Error in sending request to OpenVLA.")
+        simulation_app.close()
+    return res
+
+
+if not OPENVLA_RESPONSE:
+    episode = np.load(GT_EPISODE_PATH, allow_pickle=True)
+    current_step_index = 0
+def get_ground_truth_res():
+    global current_step_index
+    global episode
+    finished_episode = False
+    
+
+    if current_step_index >= len(episode):
+        print("No more steps available in the episode. Closing the simulation.")
+        finished_episode = True
+        return None, finished_episode
+
+    step = episode[current_step_index]
+    current_step_index += 1
+    return step["action"], finished_episode
+
+class ThresholdAdaptationState:
+    def __init__(self, default_threshold=0.005, max_stuck_steps=10):
+        self.default_threshold = default_threshold
+        self.max_stuck_steps = max_stuck_steps
+        self.position_threshold = default_threshold
+        self.prev_position_error = None
+        self.stuck_counter = 0
+        self.stuck_reference_error = None  # nuovo
+GRIPPER_CLOSE_APERTURE = 0.03
+def adaptive_check_des_state_reached(current_state, desired_state, angle_threshold, adaptation_state):
+    """
+    Adaptive version of check_des_state_reached that updates position threshold
+    only if the position error remains within 1 mm of a fixed value for several steps.
+    """
+    # print(f"Current state: {current_state}")
+    # print(f"Desired state: {desired_state}")
+    position_error = torch.norm(current_state[:, :3] - desired_state[:, :3], dim=1).item()
+    
+    quat_dot = torch.abs(torch.sum(current_state[:, 3:7] * desired_state[:, 3:7], dim=1)).clamp(-1.0, 1.0)
+    angle_error = 2 * torch.acos(quat_dot).item()
+    
+    if desired_state[:, 7] == GripperState.CLOSE:
+
+        gripper_correct = current_state[:, 7] <= GRIPPER_CLOSE_APERTURE + 0.001
+    else:
+        gripper_correct = current_state[:, 7] >= 0.04 - 0.001
+
+    # Check se errore è bloccato entro ±1mm da quello iniziale
+    if adaptation_state.stuck_reference_error is None:
+        adaptation_state.stuck_reference_error = position_error
+        adaptation_state.stuck_counter = 1
+    elif abs(position_error - adaptation_state.stuck_reference_error) < 0.001:
+        adaptation_state.stuck_counter += 1
+    else:
+        adaptation_state.stuck_counter = 0
+        adaptation_state.stuck_reference_error = position_error
+        adaptation_state.position_threshold = adaptation_state.default_threshold
+
+    if adaptation_state.stuck_counter >= adaptation_state.max_stuck_steps:
+        adaptation_state.position_threshold = adaptation_state.stuck_reference_error + 0.002
+        print(f"[ADAPTIVE] Threshold adattata a {adaptation_state.position_threshold:.4f} m")
+        adaptation_state.stuck_counter = 0  # reset per evitare riadattamenti continui
+        adaptation_state.stuck_reference_error = None
+        # return True # NOTE ADDED NOW -> TO BE TESTED
+
+    adaptation_state.prev_position_error = position_error
+
+    if position_error < adaptation_state.position_threshold and angle_error < angle_threshold and gripper_correct:
+        #print(f"REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        return True
+    else:
+        # print(f"NOT REACHED des_state! Pos err: {position_error:.4f} m | Ang err: {angle_error:.4f}°")
+        return False
+
+
+
+
+def check_des_state_reached(current_state, desired_state, position_threshold, angle_threshold):
+    """
+        Check if the current position is within the threshold of the desired position.
+        Returns True if the goal is reached, False otherwise.
+        
+        state: [x, y, z, qw, qx, qy, qz, gripper_state]
+
+    """
+    position_error = torch.norm(current_state[:, :3] - desired_state[:, :3], dim=1)
+
+    quat_dot = torch.abs(torch.sum(current_state[:, 3:7] * desired_state[:, 3:7], dim=1))  # q1 · q2
+    quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
+    angle_error = 2 * torch.acos(quat_dot)
+
+    # print("Position error: ", position_error.item())
+    # print("Angle error: ", angle_error.item())
+    if desired_state[:, 7] == GripperState.CLOSE:
+        gripper_correct = current_state[:, 7] <= GRIPPER_CLOSE_APERTURE + 0.001 
+    else:
+        gripper_correct = current_state[:, 7] >= 0.04 - 0.001
+
+    # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
+    # angle_deg = np.degrees(angle_error.item())
+    if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
+        #print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+        return True
+    else:
+        pass
+        #print(f"NOT REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
+    return False
+
+# def set_new_random_camera_pose(env, camera):
+#     # Base position
+#     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
+    
+#     # Random offset in [-0.3, 0.3]
+#     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
+
+#     # Final camera position
+#     camera_positions = base_camera_position + random_offset
+#     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
+#     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
+#     camera.set_world_poses_from_view(camera_positions, camera_targets)
 
 def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 0.2), z_range=(-0.2, 0.2)):
     """
@@ -1038,71 +1057,70 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
     camera_target = torch.tensor([CAMERA_TARGET], device=device)
     
     camera.set_world_poses_from_view(camera_position, camera_target)
-    camera_pose_to_save = torch.cat([camera_position, camera_target], dim=-1)
-    return camera_pose_to_save
+    return camera_position.clone().squeeze(0).cpu().numpy().astype(np.float32)  
 
 
-def set_new_target_pose(env):
-    goal_pose = env.unwrapped.command_manager.get_command("target_pose")
-    new_pos = goal_pose[..., :3].clone()
-    new_pos[..., 2] = 0.0
-    new_rot = torch.tensor([1.0, 0.0, 0.0, 0.0], device=new_pos.device).expand(new_pos.shape[0], 4)
 
-    root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
-    root_state[:, 0:3] = new_pos
-    root_state[:, 3:7] = new_rot
-    # Scrive la nuova pose alla simulazione
-    env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
-def save_config_file():
-        ### Create the config file with the Global Parameters defined in the current run
-    config = {
-        "OPENVLA_INSTRUCTION": OPENVLA_INSTRUCTION,
-        "SEED": SEED,
-        "RANDOM_CAMERA": RANDOM_CAMERA,
-        "RANDOM_OBJECT": RANDOM_OBJECT,
-        "RANDOM_TARGET": RANDOM_TARGET,
-        "SAVE": SAVE,
-        "CAMERA_HEIGHT": CAMERA_HEIGHT,
-        "CAMERA_WIDTH": CAMERA_WIDTH,
-        "OPENVLA_CAMERA_HEIGHT": OPENVLA_CAMERA_HEIGHT,
-        "OPENVLA_CAMERA_WIDTH": OPENVLA_CAMERA_WIDTH,
-        "CAMERA_POSITION": CAMERA_POSITION,
-        "CAMERA_TARGET": CAMERA_TARGET,
-        "CAMERA_X_RANGE": CAMERA_X_RANGE,
-        "CAMERA_Y_RANGE": CAMERA_Y_RANGE,
-        "CAMERA_Z_RANGE": CAMERA_Z_RANGE,
-        "OFFSET_EE": OFFSET_EE,
-        "ABOVE_TARGET_OFFSET": ABOVE_TARGET_OFFSET,
-        "ABOVE_OBJECT_OFFSET": ABOVE_OBJECT_OFFSET,
-        "INIT_TARGET_POS": INIT_TARGET_POS,
-        "INIT_ROBOT_POSE": INIT_ROBOT_POSE,
-        "TARGET_X_RANGE": TARGET_X_RANGE,
-        "TARGET_Y_RANGE": TARGET_Y_RANGE,
-        "TARGET_Z_RANGE": TARGET_Z_RANGE,
-        "CAMERA_X_RANGE": CAMERA_X_RANGE,
-        "CAMERA_Y_RANGE": CAMERA_Y_RANGE,
-        "CAMERA_Z_RANGE": CAMERA_Z_RANGE,
-        "EULER_NOTATION": EULER_NOTATION,
-        "OBJECT_TO_PICK": OBJECT_TO_PICK,
-        "OBJECTS": OBJECTS,
-        "objects_dict": objects,
+def check_task_completed(env, robot, object_to_pick): # TODO modify the call with object_to_pick
+
+    current_object_pose = env.unwrapped.scene[object_to_pick].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    current_target_pose[0] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][0]
+    current_target_pose[1] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][1]
+    current_target_pose[2] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][2]
+    distance_object_target = np.linalg.norm(current_object_pose[:3] - current_target_pose[:3])
+
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
+    distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
+    if distance_object_target < 0.07 and distance_object_ee > objects[OBJECTS[object_to_pick]]["height_offset"]: # TODO modify this according to object_to_pick 
+        print("Task completed! Distance: ", distance_object_target)
+        print("Distance between object and end effector: ", distance_object_ee)
+        return True
+    #print("Task not completed! Distance: ", distance_object_target)
+    #print("Distance between object and end effector: ", distance_object_ee)
+    return False
+
+def convert_numpy(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.generic):  # es. np.float32, np.bool_
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {k: convert_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(v) for v in obj]
+    else:
+        return obj
+    
+def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
+    stats = {
+        "simulation_step": simulation_step,
+        "initial_camera_pose": initial_camera_pose,
+        "initial_target_pose": initial_target_pose,
+        "initial_object_pose": initial_object_pose,
+        "distance_object_target": distance_object_target,
+        "completed": distance_object_target < 0.07,
     }
 
-    # Create output directory
-    config_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "output")
-    os.makedirs(config_dir, exist_ok=True)
+    stats = convert_numpy(stats)
+    if not os.path.exists(SAVE_STATS_DIR):
+        os.makedirs(SAVE_STATS_DIR, exist_ok=True)
 
-    # Generate timestamped filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"config_{timestamp}.json"
-    config_file_path = os.path.join(config_dir, filename)
+    save_stats_path = os.path.join(SAVE_STATS_DIR, save_stats_file)
 
-    # Write to JSON
-    with open(config_file_path, "w") as config_file:
-        json.dump(config, config_file, indent=4)
+    with open(save_stats_path, "a") as f:
+        f.write(json.dumps(stats) + "\n") 
 
-    print(f"✅ Config saved to: {config_file_path}")
+
+
+def get_dist_object_target(env, object_to_pick): # TODO modify the call with object_to_pick
+    current_object_pose = env.unwrapped.scene[object_to_pick].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+    current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+
+    distance_object_target = np.linalg.norm(current_object_pose[:2] - current_target_pose[:2]) # only x, y
+    return distance_object_target
+
 
 def check_valid_task(env):
     object_pos = env.unwrapped.scene["object1"].data.root_state_w[:, :3].clone()
@@ -1115,260 +1133,206 @@ def check_valid_task(env):
     distance_object2_target = torch.norm(object2_pos - target_pos, dim=1)
     distance_object3_target = torch.norm(object3_pos - target_pos, dim=1)
 
-    if OBJECT_TO_PICK == "object1":
-        distance_main_object = distance_object_target
-    elif OBJECT_TO_PICK == "object2":
-        distance_main_object = distance_object2_target
-    elif OBJECT_TO_PICK == "object3":
-        distance_main_object = distance_object3_target
-
-
     if distance_object_object2.item() < 0.065 or distance_object_object3.item() < 0.065:
         print("Object too close to another object.")
         return False
-    if distance_main_object.item() < 0.08: #or distance_object2_target.item() < 0.08 or distance_object3_target.item() < 0.08:
+    if distance_object_target.item() < 0.08 or distance_object2_target.item() < 0.08 or distance_object3_target.item() < 0.08:
         print("Object too close to the target.")
         return False
     return True
 
-def add_rigid_body_live(prim_path):
-    stage = omni.usd.get_context().get_stage()
-    prim = stage.GetPrimAtPath(prim_path)
-
-    if not prim.IsValid():
-        print(f"❌ Primitiva non trovata a {prim_path}")
-        return
-
-    if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
-        UsdPhysics.RigidBodyAPI.Apply(prim)
-        print(f"✅ RigidBodyAPI applicato a {prim_path}")
-    
-    UsdPhysics.CollisionAPI.Apply(prim)
-    print(f"✅ CollisionAPI applicato a {prim_path}")
-
-def run_simulator(env, env_cfg, args_cli):
-
-    save_config_file()
-
+def run_simulator(env, args_cli):
+   
     camera = env.unwrapped.scene["camera"]
-    wrist_camera = env.unwrapped.scene["wrist_camera"]
+
     robot = env.unwrapped.scene["robot"]
 
     print("\n\nRUNNING SIMULATOR!\n\n")
 
-    episode_data = []
-
     # Set the camera position and target (wrist camera is already attached to the robot in the config)
     camera_positions = torch.tensor([CAMERA_POSITION], device=env.unwrapped.device)
     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
-    camera_pose_to_save = torch.cat((camera_positions, camera_targets), dim=-1) # (1, 6)
     camera.set_world_poses_from_view(camera_positions, camera_targets)
     camera_index = args_cli.camera_id
 
     # create action buffers (position + quaternion)
     actions = torch.zeros(env.unwrapped.action_space.shape, device=env.unwrapped.device)
     actions[:, 3] = 1.0
-
-    # create state machine
-    sm = StateMachine(env_cfg.sim.dt * env_cfg.decimation, env.unwrapped.device)
-
+    # desired object orientation (we only do position control of object)
     assign_material(object_path="/World/Table", material_path="/World/Table/Looks/Black")
-    # assign_material(object_path="/World/Box", material_path="/World/Table/Looks/White")
-    # add_rigid_body_live(prim_path="/World/CrackerBox")
+
 
     count = 0
     task_count = 0
-    restarted = True
-    openvla_instruction = OPENVLA_INSTRUCTION
-    offset_ee = OFFSET_EE
-    object_to_pick = OBJECT_TO_PICK
-    next_num = 0
+    adaptation_state = ThresholdAdaptationState(default_threshold=0.005, max_stuck_steps=10)
 
-
-    robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device).unsqueeze(0) # (1, 7) ->  [x, y, z, qw, qx, qy, qz] # towards down
-    robot_init_pose[:, 2] -= NATURAL_OFFSET_EE
-
-
-    grasped_bool_vec= (False, False, False, False)
-    valid_task = True
-    while simulation_app.is_running():
-        
     
-        if valid_task and task_count!=0 and not restarted and sm.sm_state != SmState.ROBOT_INIT_POSE and sm.sm_state != SmState.TERMINAL_STATE:
-            if SAVE:
 
-                current_state = get_current_state(robot) # shape: (1, 8) # x, y, z, roll, pitch, yaw, pad, gripper
+    goal_reached = False
+    task_completed = False
+    openvla_instruction = OPENVLA_INSTRUCTION
+    object_to_pick = OBJECT_TO_PICK1
+    instruction_cnt = 0
 
-                should_save = False
+    valid_task = True
+    finished_tasks = False
 
-                if len(episode_data) == 0:
-                    should_save = True
-                else:   
-                    delta_steps = compute_delta(episode_data[-1]["state"], current_state.clone().cpu().squeeze().numpy().astype(np.float32)) 
-                    # griper_state = current_state.clone().cpu().squeeze().numpy().astype(np.float32)[-1]
+    # if SAVE_STATS:
+    #     save_stats_file = input("Specify the name of the file to save stats: ")
 
-                    should_save, grasped_bool_vec = is_significant_change(delta_steps,grasped_bool_vec, pos_th=0.08, rot_th=0.1, sm_state=sm.sm_state )
-
-                if should_save:
-                    # print("Saving step")
-                    table_image_array = take_image(camera_index, camera, camera_type="table", sim_num=task_count-1)
-                    wrist_image_array = take_image(camera_index, wrist_camera, camera_type="wrist", sim_num=task_count-1)
-                    # print(openvla_instruction)
-                    step_data = {
-                        "state": current_state.clone().cpu().squeeze().numpy().astype(np.float32),
-                        "image": table_image_array.astype(np.uint8),
-                        "wrist_image": wrist_image_array.astype(np.uint8),
-                        "language_instruction": openvla_instruction,
-                        "object_pose": current_object_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "target_pose": target_pose.clone().cpu().numpy().astype(np.float32),
-                        "camera_pose": camera_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "initial_object_pose": initial_object_pose.clone().cpu().numpy().astype(np.float32),
-                        "object1_pose": current_object1_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "object2_pose": current_object2_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "object3_pose": current_object3_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "object4_pose": current_object4_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "object5_pose": current_object5_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                        "object6_pose": current_object6_pose_to_save.clone().cpu().numpy().astype(np.float32),
-                    }
-
-                    # Include additional object poses if using multiple cubes
-                    episode_data.append(step_data)
-                else:
-                    # print("Not saving step")
-                    pass
+    initial_camera_pose = np.array([CAMERA_POSITION])
+    simulation_step = 600
 
 
-        # run everything in inference mode
-        with torch.inference_mode():
-            # step environment
+    while simulation_app.is_running():
+
+        with torch.inference_mode(): 
             if count == 0:
-                # valid_task = check_valid_task(env)
-                valid_task = True # NOTE modified
+                # valid_task = check_valid_task(env) # TODO fix appropriately
+                valid_task = True
                 
-            current_object_pose_to_save = env.unwrapped.scene[object_to_pick].data.root_state_w[:, 0:7].clone()
-            current_object1_pose_to_save = env.unwrapped.scene["object1"].data.root_state_w[:, :7].clone()
-            current_object2_pose_to_save = env.unwrapped.scene["object2"].data.root_state_w[:, :7].clone()
-            current_object3_pose_to_save = env.unwrapped.scene["object3"].data.root_state_w[:, :7].clone()
-            current_object4_pose_to_save = env.unwrapped.scene["object4"].data.root_state_w[:, :7].clone()
-            current_object5_pose_to_save = env.unwrapped.scene["object4"].data.root_state_w[:, :7].clone()
-            current_object6_pose_to_save = env.unwrapped.scene["object4"].data.root_state_w[:, :7].clone()
-            if restarted == True:
-                initial_object_pose = env.unwrapped.scene[object_to_pick].data.root_state_w[:, :7].clone()
+
+            distance_object_target = get_dist_object_target(env, object_to_pick)
+
+            task_completed = check_task_completed(env, robot, object_to_pick) # TODO modify the goal pose check
+            if task_completed and simulation_step==600:
+                simulation_step = count
+
+
+            if count == 0 or task_completed:
+                if COMPLEX_INSTRUCTION: # TODO check this part
+                    if instruction_cnt < len(instructions):
+                        openvla_instruction = instructions[instruction_cnt]
+                        if instruction_cnt == 0: 
+                            object_to_pick = OBJECT_TO_PICK1
+                        elif instruction_cnt == 1:
+                            object_to_pick = OBJECT_TO_PICK2
+                        elif instruction_cnt == 2:
+                            object_to_pick = OBJECT_TO_PICK3
+                        instruction_cnt += 1
+                    else:
+                        finished_tasks = True
+                else:
+                    if instruction_cnt < len(instructions):
+                        instruction_cnt += 1
+                    else:
+                        finished_tasks = True
+                        print("All tasks completed. Exiting...")
+            
+
+            if count == 0 or task_completed and COMPLEX_INSTRUCTION and OPENVLA_RESPONSE:
+                initial_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+                initial_object_pose = env.unwrapped.scene[object_to_pick].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
+                des_state = get_init_des_state(env)
+                ee_prev_pos = torch.tensor(des_state[:, :3], device=env.unwrapped.device)
+                ee_prev_quat = torch.tensor(des_state[:, 3:7], device=env.unwrapped.device)
+                
+            # print("Getting curretn state...")
+            current_state = get_current_state(robot, env)
+            # print("Checking if goal is reached...")
+            # goal_reached = check_des_state_reached(current_state, des_state, position_threshold=0.0153, angle_threshold=0.05)
+            goal_reached = adaptive_check_des_state_reached(current_state, des_state, angle_threshold=0.05, adaptation_state=adaptation_state)
+
+            
+            if valid_task and goal_reached and count > 0 and not task_completed and not finished_tasks:
+                print("Goal reached: ", goal_reached)
+                if OPENVLA_RESPONSE:
+                    if RANDOM_CAMERA_EVERY_VLA_STEP:
+                        set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
+                    res = get_openvla_res(camera_index, camera, openvla_instruction)
+                    print("TASK INSTRUCTION: ", openvla_instruction)
+                    finished_episode = False
+                    
+                else:
+                
+                    res, finished_episode = get_ground_truth_res()
 
                 
-                target_pose = env.unwrapped.command_manager.get_command("target_pose")[..., :7].clone()
-                target_pose[:, 0] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][0]
-                target_pose[:, 1] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][1]
-                target_pose[:, 2] += objects[OBJECTS[object_to_pick]]["offset_on_goal"][2]
-                restarted = False
-
-            # advance state machine
-            if valid_task:
-                des_pose = sm.get_des_pose(
-                    get_current_ee(robot), # shape (1, 7)
-                    robot_init_pose,       # shape (1, 7)
-                    initial_object_pose,   # shape (1, 7)
-                    target_pose,           # shape (1, 7)
-                    offset_ee
-                )
-            else:
-                gripper_state = torch.tensor(GripperState.OPEN, device=env.unwrapped.device).unsqueeze(0)  # shape: (1, 1)
-                robot_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device).unsqueeze(0)  # shape: (1, 7)
-                des_pose = torch.cat([robot_pose, gripper_state.unsqueeze(-1)], dim=-1)
+                if not finished_episode:
+                    ee_des_pose = apply_delta(ee_prev_pos[0].cpu().numpy(), ee_prev_quat[0].cpu().numpy(), res, env)
+                    ee_prev_pos = torch.tensor(ee_des_pose[:3], device=env.unwrapped.device).unsqueeze(0)
+                    ee_prev_quat = torch.tensor(ee_des_pose[3:7], device=env.unwrapped.device).unsqueeze(0)
+                    
+                    if res[6] < GRIPPER_CLOSE_APERTURE: # open = 0.04 
+                        des_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
+                    else:
+                        des_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
                 
-        
-            dones = env.step(des_pose)[-2]
+                    des_state = torch.cat([ee_des_pose.unsqueeze(0), des_gripper_state.unsqueeze(0)], dim=-1) # (1, 8)
+
+
+            dones = env.step(des_state)[-2]
 
             camera.update(dt=env.unwrapped.sim.get_physics_dt())
 
-            # reset state machine
+
+                
+
             if dones.any():
-                grasped_bool_vec = [False, False, False, False]
-                
-                if valid_task and task_count != 0:
-                    next_num = save_episode_stepwise(episode_data)
-                    episode_data = []
-                count = 0
-               
+                save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target)
+                print("\n\nRESETTING ENVIRONMENT...\n\n")
                 if RANDOM_CAMERA:
-                    camera_pose_to_save = set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE)
-                   
-                set_new_target_pose(env)
+                    initial_camera_pose = set_new_random_camera_pose(env, camera, x_range=CAMERA_X_RANGE, y_range=CAMERA_Y_RANGE, z_range=CAMERA_Z_RANGE) # set the new random camera position in simulation
 
-                restarted = True
-                sm.reset()
+                set_new_goal_pose(env) # set the new box (goal) position in simulation 
+            
+                count = 0
+
+                global current_step_index
+                current_step_index = 0
                 task_count += 1
-                if next_num >= 2*SAMPLES_PER_OBJECT:
-                    object_to_pick = "object3"
-                elif next_num >= SAMPLES_PER_OBJECT:
-                    object_to_pick = "object2"
-                
-                if next_num > 3 * SAMPLES_PER_OBJECT:
-                    print("All tasks completed. Exiting...")
-                    simulation_app.close()
-                    exit(0)
+                task_completed = False
+                finished_tasks = False
+                instruction_cnt = 0
+                simulation_step = 600
 
-                openvla_instruction = f"Pick the {OBJECTS[object_to_pick]} and place it in the brown box. \n"
-                specific_offset_ee = objects[OBJECTS[object_to_pick]]["specific_offset_ee"]  # Specific offset for the object
-                offset_ee = specific_offset_ee + NATURAL_OFFSET_EE # 0.01 settato a mano a naso 
-                valid_task = True
                 continue
-
 
             count += 1
 
     # close the environment
     env.close()
 
-def clear_img_folder():
-    if os.path.exists("./isaac_ws/src/output/camera"):
-        shutil.rmtree("./isaac_ws/src/output/camera")
-    if os.path.exists("./isaac_ws/src/output/episodes"):
-        shutil.rmtree("./isaac_ws/src/output/episodes")
-    os.mkdir("./isaac_ws/src/output/camera")
-    os.mkdir("./isaac_ws/src/output/episodes")
 
-
-
-def hide_prim(prim_path: str):
-    stage = omni.usd.get_context().get_stage()
-    prim = stage.GetPrimAtPath(prim_path)
-
-    if prim and prim.IsValid():
-        UsdGeom.Imageable(prim).MakeInvisible()
-        print(f"✅ Hidden prim: {prim_path}")
+def load_config(config_path = CONFIG_PATH):
+    # Load the configuration file
+    if config_path.endswith(".json"):
+        print("Loading config from JSON file...")
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        
+        # Change Globals according to the loaded config
+        for key, value in config.items():
+            if key in globals() and key != "INIT_TARGET_POS" and key != "INIT_OBJECT_POS":
+                globals()[key] = value
     else:
-        print(f"⚠️ Prim '{prim_path}' not found or invalid.")
+        print("Not loading config from JSON file. Using default values.")
 
 
 def main():
-    # # parse configuration
-    clear_img_folder() # TODO remove for other objects
+    
+    # load_config()
+
 
     env_cfg = FrankaCubeLiftEnvCfg()
     env_cfg.sim.device = args_cli.device
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
-    if SEED is not None:
-        env_cfg.seed = SEED
+    env_cfg.seed = SEED
 
-    # create environment
+
     env = gym.make("Isaac-Lift-Cube-Franka-IK-Abs-v0", cfg=env_cfg)
-
-    env.unwrapped.sim.set_camera_view([1.0, 1.0, 1.0], [0.3, 0.0, 0.0])
-
-    # Rimuovi marker dopo che l'ambiente li ha creati automaticamente
+    # reset environment at start
+    env.unwrapped.sim.set_camera_view([1.0, 1.5, 1.5], [0.2, 0.0, 0.0])
 
     env.reset()
 
     hide_prim("/Visuals/Command/goal_pose")
     hide_prim("/Visuals/Command/body_pose")
-
-    run_simulator(env, env_cfg, args_cli)
+    
+    run_simulator(env, args_cli)
     
 
 if __name__ == "__main__":
-    # run the main function
     main()
-    # close sim app
     simulation_app.close()

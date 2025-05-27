@@ -12,7 +12,7 @@ import os
 import shutil
 import math
 
-MULTICUBE = True
+MULTICUBE = False
 
 def empty_dir(dir_path):
     if os.path.exists(dir_path):
@@ -25,7 +25,7 @@ def empty_dir(dir_path):
     else:
         os.makedirs(dir_path)
 
-def split_dataset(input_dir, output_dir, train_ratio=0.95):
+def split_dataset(input_dir, output_dir, train_ratio=1.0):
     # Lista ordinata dei file
     all_files = sorted(os.listdir(input_dir))
     all_files = [f for f in all_files if os.path.isfile(os.path.join(input_dir, f))]

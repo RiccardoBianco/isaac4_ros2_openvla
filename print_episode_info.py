@@ -4,7 +4,7 @@ import argparse
 from pprint import pprint
 from PIL import Image
 
-EPISODE_PATH = "rlds_dataset_builder/sim_data_custom_v0/data/train/episode_0006.npy"
+EPISODE_PATH = "isaac_ws/src/output/episodes_prev/episode_0000.npy"
 
 def load_first_step(episode_path):
     data = np.load(episode_path, allow_pickle=True)
@@ -14,8 +14,16 @@ def load_first_step(episode_path):
     print(f"Total steps: {len(data)}\n")
 
     print("First step:")
-    print(f"Object pose: {first_step['object_pose'][0, :3]}")
-    print(f"Goal pose: {first_step['goal_pose'][0, :3]}")
+    for key, value in first_step.items():
+        if isinstance(value, np.ndarray):
+            if key == 'image' or key == 'wrist_image':
+                print(f"{key}: {value.shape} (Image)")
+            else:
+                print(f"{key}: {value}")
+        elif isinstance(value, Image.Image):
+            print(f"{key}: {value.shape}")
+        else:
+            print(f"{key}: {value}")
     
     # print(f"Camera pose: {first_step['camera_pose']}")
 
