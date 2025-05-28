@@ -1,6 +1,6 @@
 
-OPENVLA_RESPONSE = False
-OBJECT_TO_PICK1 = "object3"
+OPENVLA_RESPONSE = True
+OBJECT_TO_PICK1 = "object1"
 OBJECT_TO_PICK2 = "object2"
 OBJECT_TO_PICK3 = "object3"
 COMPLEX_INSTRUCTION = False
@@ -15,7 +15,7 @@ RANDOM_TARGET = False
 
 
 
-GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_0009.npy"
+GT_EPISODE_PATH = "./isaac_ws/src/output/episodes/episode_2000.npy"
 CONFIG_PATH = "./isaac_ws/src/output/multicube_yellow/multicube_yellow.json"
 
 SAVE_STATS = False
@@ -171,7 +171,7 @@ objects = {
         "y_range": object_random_range,
         "z_range": (0.0, 0.0),
         "scale": (0.6, 0.6, 0.6),  # Scale the object to fit better in the scene
-        "height_offset": 0.25
+        "height_offset": 0.18
     },
     "tomato_can": {
         "path": f"{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd", # -> terzo oggetto
@@ -265,6 +265,8 @@ if not OPENVLA_RESPONSE:
 
 OPENVLA_UNNORM_KEY = "sim_data_custom_v0"
 OPENVLA_INSTRUCTION = f"Place the {OBJECTS[OBJECT_TO_PICK1]} in the brown box.\n"
+# OPENVLA_INSTRUCTION += f"Place the {OBJECTS[OBJECT_TO_PICK2]} in the brown box.\n"
+# OPENVLA_INSTRUCTION += f"Place the {OBJECTS[OBJECT_TO_PICK3]} in the brown box.\n"
 
 
 
@@ -897,6 +899,7 @@ def set_new_goal_pose(env):
 
 def get_openvla_res(camera_index, camera, openvla_instruction):
     image_array = take_image(camera_index, camera)
+
     payload = {
         "image": image_array,  # Sending as numpy array, no conversion to list
         "instruction": openvla_instruction,
@@ -1073,7 +1076,7 @@ def check_task_completed(env, robot, object_to_pick): # TODO modify the call wit
 
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
-    if distance_object_target < 0.07 and distance_object_ee > objects[OBJECTS[object_to_pick]]["height_offset"]: # TODO modify this according to object_to_pick 
+    if distance_object_target < 0.1 and distance_object_ee > objects[OBJECTS[object_to_pick]]["height_offset"]: # TODO modify this according to object_to_pick 
         print("Task completed! Distance: ", distance_object_target)
         print("Distance between object and end effector: ", distance_object_ee)
         return True
@@ -1212,12 +1215,6 @@ def run_simulator(env, args_cli):
                         instruction_cnt += 1
                     else:
                         finished_tasks = True
-                else:
-                    if instruction_cnt < len(instructions):
-                        instruction_cnt += 1
-                    else:
-                        finished_tasks = True
-                        print("All tasks completed. Exiting...")
             
 
             if count == 0 or task_completed and COMPLEX_INSTRUCTION and OPENVLA_RESPONSE:
