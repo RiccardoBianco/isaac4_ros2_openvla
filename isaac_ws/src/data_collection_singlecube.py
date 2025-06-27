@@ -1,4 +1,10 @@
 
+# * ###########################################################################
+# * Data Collection Script for Single-Cube Lift Environment
+# * ###########################################################################
+
+# ^ Configuration Parameters
+
 CUBE_COLOR_STR= "green" # "green", "blue", "yellow"
 
 RANDOM_CAMERA = True
@@ -19,8 +25,6 @@ OPENVLA_INSTRUCTION = f"Pick the {CUBE_COLOR_STR} cube and place it on the red a
 
 SEED = 42
 
-
-
 SAVE = True
 
 CAMERA_HEIGHT = 1920
@@ -31,9 +35,9 @@ OPENVLA_CAMERA_WIDTH = 256
 CAMERA_POSITION = [0.9, -0.16, 0.6]
 CAMERA_TARGET = [0.4, 0.0, 0.0]
 
-CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
+CUBE_SIZE = [0.07, 0.03, 0.06]  # Size of the cube
 
-OFFSET_EE = CUBE_SIZE[2] / 2 - 0.01 + 0.107 # 0.01 settato a mano a naso
+OFFSET_EE = CUBE_SIZE[2] / 2 - 0.01 + 0.107 
 ABOVE_TARGET_OFFSET = 0.15
 ABOVE_OBJECT_OFFSET = 0.15
 
@@ -68,7 +72,7 @@ else:
 
 EULER_NOTATION = "zyx" 
 
-
+# ^ Imports and isaac lab app launch
 
 import argparse
 
@@ -151,11 +155,13 @@ from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: ski
 
 
 def scalar_first_to_last(q):
+    """Convert quaternion from scalar-first to scalar-last format."""
     w, x, y, z = q
     return [x, y, z, w]
 
 
 def scalar_last_to_first(q):
+    """Convert quaternion from scalar-last to scalar-first format."""
     x, y, z, w = q
     return [w, x, y, z]
 
@@ -199,12 +205,9 @@ def compute_delta(ee_pose, next_ee_pose):
     return delta
 
 
-
-
-
-
 @configclass
 class FrankaCubeLiftEnvCfg(LiftEnvCfg):
+    """Configuration for the Franka Cube Lift Environment."""
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -257,39 +260,41 @@ class FrankaCubeLiftEnvCfg(LiftEnvCfg):
             prim_path="/World/Light", spawn=sim_utils.DomeLightCfg(intensity=3000.0, color=(0.75, 0.75, 0.75))
         )
 
+        # Set the object to be lifted
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             spawn=sim_utils.CuboidCfg(
-                size=CUBE_SIZE,  # Dimensioni del cubo
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                size=CUBE_SIZE,  # Cube size
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Physical properties
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Mass
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Collision properties
                 visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=CUBE_COLOR,  # Colore rosso
+                    diffuse_color=CUBE_COLOR,
                     metallic=0.0
                 ),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=INIT_OBJECT_POS,  # OVERWRITTEN BY THE COMMANDER
-                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                rot=(1.0, 0.0, 0.0, 0.0)  # Initial orientation (quaternion)
             ),
         )
 
+        # Set the target area
         self.scene.box = RigidObjectCfg(
             prim_path="/World/Box",
             spawn=sim_utils.CuboidCfg(
-                size=(0.1, 0.1, 0.005),  # Dimensioni del cubo
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Proprietà fisiche
-                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Massa
-                collision_props=sim_utils.CollisionPropertiesCfg(),  # Proprietà di collisione
+                size=(0.1, 0.1, 0.005),  # Size of the cube
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(),  # Physical properties
+                mass_props=sim_utils.MassPropertiesCfg(mass=1.0),  # Mass
+                collision_props=sim_utils.CollisionPropertiesCfg(),  # Collision properties
                 visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(1.0, 0.0, 0.0),  # Colore rosso
+                    diffuse_color=(1.0, 0.0, 0.0),  # Red color
                     metallic=0.0
                 ),
             ),
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=INIT_TARGET_POS,  # OVERWRITTEN BY THE COMMANDER
-                rot=(1.0, 0.0, 0.0, 0.0)  # Orientamento iniziale (quaternione)
+                rot=(1.0, 0.0, 0.0, 0.0)  # Initial orientation (quaternion)
             ),
         )
     
@@ -434,7 +439,10 @@ class StateMachine:
         self.sm_state = SmState.ROBOT_INIT_POSE
 
     def get_des_pose(self, ee_current_pose, init_pose, initial_object_pose, target_pose):
-        
+        """
+        Get the desired end-effector pose based on the current state and target.
+        """
+
         init_pose = init_pose.clone()
         initial_object_pose = initial_object_pose.clone()
         target_pose = target_pose.clone()
@@ -520,20 +528,21 @@ class StateMachine:
 
 
 def assign_material(object_path, material_path):
+    """Assign a material to a USD object."""
     stage = omni.usd.get_context().get_stage()
 
-    # Prendi la primitiva della tabella
+    # Take the prim of the object
     object_prim = stage.GetPrimAtPath(object_path)
-    
-    # Prendi il materiale esistente
+
+    # Take the existing material
     material_prim = stage.GetPrimAtPath(material_path)
 
     if object_prim and material_prim:
         material = UsdShade.Material(material_prim)
         UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
-        print("Materiale assegnato correttamente a ", object_path)
+        print("Material assigned successfully to ", object_path)
     else:
-        print("Errore: Primitiva o materiale non trovati.")
+        print("Error: Primitive or material not found.")
 
 def take_image(camera_index, camera, camera_type, sim_num):
     """
@@ -580,26 +589,24 @@ def take_image(camera_index, camera, camera_type, sim_num):
     return None 
 
 def get_current_state(robot):
+    """Get the current state of the robot's end-effector in the world frame."""
     joint_pos = robot.data.joint_pos.clone()
-    ee_pose_w = robot.data.body_state_w[:, 8, 0:7] # TODO fix robot_entity_cfg.body_ids[0] = 8
+    ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     root_pose_w = robot.data.root_state_w[:, 0:7]
 
-    # posizione dell'end-effector relativa al root
+    # Position of the end-effector relative to the root
     ee_pos_b, ee_quat_b = subtract_frame_transforms(
         root_pose_w[:, 0:3], root_pose_w[:, 3:7],
         ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
-    # print("joint_pos: ", joint_pos)
-    # print("joint_pose shape: ", joint_pos.shape)
+
     gripper_state = joint_pos[:, -1].unsqueeze(-1)  # shape: (1, 1)
-    # print("gripper_state: ", gripper_state.shape)
-    # print("gripper_state: ", gripper_state)
+
     quat_np = scalar_first_to_last(ee_quat_b[0].cpu().numpy())  # shape (4,)
     R_euler_np = Rotation.from_quat(quat_np).as_euler(EULER_NOTATION) # shape (3,)
     R_euler = torch.tensor(R_euler_np, device=ee_pos_b.device).unsqueeze(0)  # shape (1, 3)
     pad = torch.tensor([[0.0]], device=ee_pos_b.device)
-    current_state = torch.cat([ee_pos_b, R_euler, pad, gripper_state], dim=-1)  # shape: (1, 8) # TODO probabilmente va aggiunto il padding solo allo state
-    #current_state = torch.cat([ee_pos_b, R_euler, gripper_state], dim=-1) # shape: (1, 7)
+    current_state = torch.cat([ee_pos_b, R_euler, pad, gripper_state], dim=-1)  # shape: (1, 8)
     return current_state
                 
 
@@ -611,8 +618,6 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
         episode_steps (List[dict]): Each step must include keys like "state", "action", "image", etc.
         save_dir (str): Directory where .npy episodes are stored.
     """
-    # folder_name = "episodes"
-    # save_task_dir = os.path.join(SAVE_DATASET_DIR, folder_name)
 
     # Check on the final state of the object wrt the target
     distance_object_target = np.linalg.norm(episode_steps[-1]["object_pose"][:, :3] - episode_steps[-1]["target_pose"][:, :3])
@@ -627,9 +632,6 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
             
     for i in range(len(episode_steps)-1):
         episode_steps[i]["action"]= compute_delta(episode_steps[i]["state"], episode_steps[i+1]["state"])
-        # print("Step: ", i)
-        # print("Action: ", episode_steps[i]["action"]) # dx, dy, dz, droll, dpitch, dyaw, next_gripper
-        # print("State: ", episode_steps[i]["state"]) # x, y, z, roll, pitch, yaw, gripper
     
     episode_steps[-1]["action"] = compute_delta(episode_steps[-1]["state"], episode_steps[-1]["state"])
 
@@ -653,6 +655,9 @@ def save_episode_stepwise(episode_steps, save_dir="isaac_ws/src/output/episodes"
 
     
 def is_significant_change(delta, grasped_bool_vec, pos_th, rot_th, sm_state):
+    """
+    Check if the change in state is significant enough to warrant a new episode.
+    """
     grasp_start_saved, grasp_end_saved, release_start_saved, release_end_saved = grasped_bool_vec
 
     updated_vec = grasped_bool_vec
@@ -690,6 +695,7 @@ def is_significant_change(delta, grasped_bool_vec, pos_th, rot_th, sm_state):
 
 
 def get_current_ee(robot):
+    """Get the current end-effector pose in the body frame."""
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     root_pose_w = robot.data.root_state_w[:, 0:7]
     ee_pos_b, ee_quat_b = subtract_frame_transforms(
@@ -699,42 +705,27 @@ def get_current_ee(robot):
     current_state = torch.cat([ee_pos_b, ee_quat_b], dim=-1) # (1, 7)
     return current_state
 
-# def set_new_random_camera_pose(env, camera):
-#     # Base position
-#     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
-    
-#     # Random offset in [-0.3, 0.3]
-#     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
-
-#     # Final camera position
-#     camera_positions = base_camera_position + random_offset
-#     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-#     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
-#     camera.set_world_poses_from_view(camera_positions, camera_targets)
-#     camera_pose_to_save = torch.cat([camera_positions, camera_targets], dim=-1)
-#     return camera_pose_to_save
-
 def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 0.2), z_range=(-0.2, 0.2)):
     """
-    Imposta una nuova posizione casuale della camera all'interno dei range specificati per x, y, z.
+    Set a new random camera position within the specified ranges for x, y, z.
 
     Args:
-        env: ambiente della simulazione
-        camera: oggetto camera
-        x_range, y_range, z_range: tuple con (min, max) per ogni asse
+        env: simulation environment
+        camera: camera object
+        x_range, y_range, z_range: tuple with (min, max) for each axis
     """
     device = env.unwrapped.device
 
     base_camera_position = torch.tensor(CAMERA_POSITION, device=device)
 
-    # Genera offset randomici per ciascun asse
+    # Generate random offsets for each axis
     offset_x = torch.FloatTensor(1).uniform_(*x_range).to(device)
     offset_y = torch.FloatTensor(1).uniform_(*y_range).to(device)
     offset_z = torch.FloatTensor(1).uniform_(*z_range).to(device)
 
     random_offset = torch.cat([offset_x, offset_y, offset_z])
 
-    # Applica l'offset
+    # Apply the offset
     camera_position = base_camera_position + random_offset
     camera_position = camera_position.unsqueeze(0)  # (1, 3)
 
@@ -746,6 +737,7 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
 
 
 def set_new_target_pose(env):
+    """ Set a new target pose for the box in the simulation environment."""
     goal_pose = env.unwrapped.command_manager.get_command("target_pose")
     new_pos = goal_pose[..., :3].clone()
     new_pos[..., 2] = 0.0
@@ -754,10 +746,13 @@ def set_new_target_pose(env):
     root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
     root_state[:, 0:3] = new_pos
     root_state[:, 3:7] = new_rot
-    # Scrive la nuova pose alla simulazione
+    # Write the new pose to the simulation
     env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
 def save_config_file():
+    """
+    Create a configuration file for the current run.
+    """
         ### Create the config file with the Global Parameters defined in the current run
     config = {
         "OPENVLA_INSTRUCTION": OPENVLA_INSTRUCTION,
@@ -811,6 +806,9 @@ def save_config_file():
 
 
 def run_simulator(env, env_cfg, args_cli):
+    """
+    Main function that runs the Isaac Sim simulator, creates the environment, the state machine, etc.
+    """
 
     save_config_file()
 
@@ -934,6 +932,7 @@ def run_simulator(env, env_cfg, args_cli):
     env.close()
 
 def clear_img_folder():
+    """Clear the image folder where the camera images are saved."""
     if os.path.exists("./isaac_ws/src/output/camera"):
         shutil.rmtree("./isaac_ws/src/output/camera")
     if os.path.exists("./isaac_ws/src/output/episodes"):
@@ -944,6 +943,7 @@ def clear_img_folder():
 
 
 def hide_prim(prim_path: str):
+    """Hide a prim in the USD stage."""
     stage = omni.usd.get_context().get_stage()
     prim = stage.GetPrimAtPath(prim_path)
 
@@ -955,6 +955,7 @@ def hide_prim(prim_path: str):
 
 
 def main():
+    """Main function to create the environment and run the simulator."""
     # # parse configuration
     clear_img_folder()
 

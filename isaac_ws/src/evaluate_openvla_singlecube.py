@@ -1,4 +1,10 @@
 
+# * ###########################################################################
+# * Evaluation Script for Single-Cube Lift Environment
+# * ###########################################################################
+
+# ^ Configuration Parameters
+
 OPENVLA_RESPONSE = True
 
 GT_EPISODE_PATH = "./isaac_ws/src/output/random_camera_green/episode_0011.npy"
@@ -12,17 +18,11 @@ CAMERA_Y_RANGE = (-0.2, 0.2)
 CAMERA_Z_RANGE = (-0.2, 0.2)
 
 save_stats_file = "single_green_r_all_camerainrange.json"
-
-# #### TEST 2 ####
-# save_stats_file = "single_green_r_all_rangeyout_+10.json"
-# CAMERA_Y_RANGE = (0.2, 0.3)
-
-# #### TEST 3 ####
 save_stats_file = "single_green_r_all_rangeyout_-10.json"
 CAMERA_Y_RANGE = (-0.3, -0.2)
 
 
-SAVE_STATS_DIR = "./isaac_ws/src/stats/single_green_r_all_12+5%" # TODO set the right percentage
+SAVE_STATS_DIR = "./isaac_ws/src/stats/single_green_r_all_12+5%"
 
 RANDOM_CAMERA = True
 RANDOM_OBJECT = True
@@ -65,9 +65,7 @@ CAMERA_POSITION = [0.9, -0.16, 0.6] #[1.0, -0.4, 0.9] video single_cube_random_a
 CAMERA_TARGET = [0.4, 0.0, 0.0]
 
 
-CUBE_SIZE = [0.07, 0.03, 0.06]  # Dimensioni del cubo
-
-
+CUBE_SIZE = [0.07, 0.03, 0.06]  # Cube size
 
 
 if RANDOM_TARGET and OPENVLA_RESPONSE: # ABSOLUTE POSITION
@@ -91,6 +89,7 @@ else:
 
 EULER_NOTATION = "zyx" 
 
+# ^ Imports and isaac lab app launch
 
 import argparse
 
@@ -176,6 +175,7 @@ from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG  # isort: ski
 json_numpy.patch()
 
 def set_server_url():
+    """ Set the server URL based on the user environment."""
     # if user is "wanghan"
     user = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
 
@@ -199,6 +199,7 @@ def set_server_url():
 SERVER_URL = set_server_url()
 
 def send_request(payload):
+    """Send a POST request to the server with the given payload."""
 
     # Send POST request to the server
     response = requests.post(SERVER_URL, json=payload)
@@ -213,11 +214,13 @@ def send_request(payload):
 
 
 def scalar_first_to_last(q):
+    """Convert quaternion from scalar-first to scalar-last format."""
     w, x, y, z = q
     return [x, y, z, w]
 
 
 def scalar_last_to_first(q):
+    """Convert quaternion from scalar-last to scalar-first format."""
     x, y, z, w = q
     return [w, x, y, z]
 
@@ -292,6 +295,7 @@ def apply_delta(position, orientation, delta, env):
 
 @configclass
 class FrankaCubeLiftEnvCfg(LiftEnvCfg):
+    """Configuration for the Franka Cube Lift Environment."""
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -432,22 +436,24 @@ class GripperState:
 
 
 def assign_material(object_path, material_path):
+    """Assign a material to a prim in the USD stage."""
     stage = omni.usd.get_context().get_stage()
 
-    # Prendi la primitiva della tabella
+    # Get the object primitive
     object_prim = stage.GetPrimAtPath(object_path)
-    
-    # Prendi il materiale esistente
+
+    # Get the existing material
     material_prim = stage.GetPrimAtPath(material_path)
 
     if object_prim and material_prim:
         material = UsdShade.Material(material_prim)
         UsdShade.MaterialBindingAPI(object_prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
-        print("Materiale assegnato correttamente a ", object_path)
+        print("Material assigned successfully to ", object_path)
     else:
-        print("Errore: Primitiva o materiale non trovati.")
+        print("Error: Primitive or material not found.")
 
 def hide_prim(prim_path: str):
+    """Hide a prim in the USD stage."""
     stage = omni.usd.get_context().get_stage()
     prim = stage.GetPrimAtPath(prim_path)
 
@@ -483,12 +489,14 @@ def take_image(camera_index, camera):
     return None 
 
 def get_init_des_state(env):
+    """Get the initial desired state for the robot end-effector."""
     robot_init_pose = torch.tensor(INIT_ROBOT_POSE, device=env.unwrapped.device)
     gripper = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
     init_ee_pose = torch.cat([robot_init_pose, gripper], dim=-1) # shape: (8,) -> x, y, z, qw, qx, qy, qz, gripper_state
     return init_ee_pose.unsqueeze(0) # shape: (1, 8)
 
 def get_current_state(robot, env):
+    """Get the current state of the robot end-effector in the environment."""
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     root_pose_w = robot.data.root_state_w[:, 0:7]
     ee_pos_b, ee_quat_b = subtract_frame_transforms(
@@ -496,15 +504,12 @@ def get_current_state(robot, env):
         ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
     )
     current_gripper_state = robot.data.joint_pos.clone()[:, -1] 
-    # if current_gripper_state < 0.03: # TODO fix this
-    #     current_gripper_state = torch.tensor([GripperState.CLOSE], device=env.unwrapped.device)
-    # else:
-    #     current_gripper_state = torch.tensor([GripperState.OPEN], device=env.unwrapped.device)
     
     current_state = torch.cat([ee_pos_b, ee_quat_b, current_gripper_state.unsqueeze(-1)], dim=-1) # (1, 8)
     return current_state
 
 def set_new_goal_pose(env):
+    """Set a new goal pose for the box in the environment."""
     goal_pose = env.unwrapped.command_manager.get_command("target_pose")
     new_pos = goal_pose[..., :3].clone()
     new_pos[..., 2] = 0.0
@@ -513,10 +518,11 @@ def set_new_goal_pose(env):
     root_state = torch.zeros((env.unwrapped.num_envs, 13), device=env.unwrapped.device)
     root_state[:, 0:3] = new_pos
     root_state[:, 3:7] = new_rot
-    # Scrive la nuova pose alla simulazione
+    # Write the new pose to the simulation
     env.unwrapped.scene["box"].write_root_state_to_sim(root_state)
 
 def get_openvla_res(camera_index, camera):
+    """Get the OpenVLA response by sending the image and instruction to the server."""
     image_array = take_image(camera_index, camera)
     payload = {
         "image": image_array,  # Sending as numpy array, no conversion to list
@@ -574,7 +580,7 @@ def adaptive_check_des_state_reached(current_state, desired_state, angle_thresho
     else:
         gripper_correct = current_state[:, 7] >= 0.04 - 0.001
 
-    # Check se errore è bloccato entro ±1mm da quello iniziale
+    # Check if error is stuck within ±1mm of the initial one
     if adaptation_state.stuck_reference_error is None:
         adaptation_state.stuck_reference_error = position_error
         adaptation_state.stuck_counter = 1
@@ -587,8 +593,8 @@ def adaptive_check_des_state_reached(current_state, desired_state, angle_thresho
 
     if adaptation_state.stuck_counter >= adaptation_state.max_stuck_steps:
         adaptation_state.position_threshold = adaptation_state.stuck_reference_error + 0.002
-        print(f"[ADAPTIVE] Threshold adattata a {adaptation_state.position_threshold:.4f} m")
-        adaptation_state.stuck_counter = 0  # reset per evitare riadattamenti continui
+        print(f"[ADAPTIVE] Threshold adapted to {adaptation_state.position_threshold:.4f} m")
+        adaptation_state.stuck_counter = 0  # reset to avoid continuous readjustments
         adaptation_state.stuck_reference_error = None
 
     adaptation_state.prev_position_error = position_error
@@ -617,15 +623,12 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
     quat_dot = torch.clamp(quat_dot, -1.0, 1.0)  # clamp per stabilità numerica
     angle_error = 2 * torch.acos(quat_dot)
 
-    # print("Position error: ", position_error.item())
-    # print("Angle error: ", angle_error.item())
     if desired_state[:, 7] == GripperState.CLOSE:
         gripper_correct = current_state[:, 7] <= CUBE_SIZE[1] / 2 + 0.001 
     else:
         gripper_correct = current_state[:, 7] >= 0.04 - 0.001
 
-    # print("Gripper state: ", current_state[:, 7], desired_state[:, 7])
-    # angle_deg = np.degrees(angle_error.item())
+
     if position_error.item() < position_threshold and angle_error.item() < angle_threshold and gripper_correct:
         #print(f"REACHED des_state! Pos err: {position_error.item():.4f} m | Ang err: {angle_error.item():.4f}°")
         return True
@@ -634,40 +637,27 @@ def check_des_state_reached(current_state, desired_state, position_threshold, an
         pass
     return False
 
-# def set_new_random_camera_pose(env, camera):
-#     # Base position
-#     base_camera_position = torch.tensor(CAMERA_POSITION, device=env.unwrapped.device)
-    
-#     # Random offset in [-0.3, 0.3]
-#     random_offset = (torch.rand(3, device=env.unwrapped.device) - 0.5) * 0.6
-
-#     # Final camera position
-#     camera_positions = base_camera_position + random_offset
-#     camera_positions = camera_positions.unsqueeze(0)  # shape: (1, 3)
-#     camera_targets = torch.tensor([CAMERA_TARGET], device=env.unwrapped.device)
-#     camera.set_world_poses_from_view(camera_positions, camera_targets)
-
 def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 0.2), z_range=(-0.2, 0.2)):
     """
-    Imposta una nuova posizione casuale della camera all'interno dei range specificati per x, y, z.
+    Set a new random camera position within the specified ranges for x, y, z.
 
     Args:
-        env: ambiente della simulazione
-        camera: oggetto camera
-        x_range, y_range, z_range: tuple con (min, max) per ogni asse
+        env: simulation environment
+        camera: camera object
+        x_range, y_range, z_range: tuple with (min, max) for each axis
     """
     device = env.unwrapped.device
 
     base_camera_position = torch.tensor(CAMERA_POSITION, device=device)
 
-    # Genera offset randomici per ciascun asse
+    # Generate random offsets for each axis
     offset_x = torch.FloatTensor(1).uniform_(*x_range).to(device)
     offset_y = torch.FloatTensor(1).uniform_(*y_range).to(device)
     offset_z = torch.FloatTensor(1).uniform_(*z_range).to(device)
 
     random_offset = torch.cat([offset_x, offset_y, offset_z])
 
-    # Applica l'offset
+    # Apply the offset
     camera_position = base_camera_position + random_offset
     camera_position = camera_position.unsqueeze(0)  # (1, 3)
 
@@ -678,6 +668,7 @@ def set_new_random_camera_pose(env, camera, x_range=(-0.2, 0.2), y_range=(-0.2, 
 
 
 def check_task_completed(env, robot):
+    """ Check if the task is completed based on the object and target poses."""
     current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     distance_object_target = np.linalg.norm(current_object_pose[:3] - current_target_pose[:3])
@@ -685,12 +676,11 @@ def check_task_completed(env, robot):
     ee_pose_w = robot.data.body_state_w[:, 8, 0:7]
     distance_object_ee = np.linalg.norm(current_object_pose[:3] - ee_pose_w[:, :3].cpu().numpy().squeeze(0).astype(np.float32))
     if distance_object_target < 0.06 and distance_object_ee > 0.15:
-        #print("Task completed! Distance: ", distance_object_target)
-        #print("Distance between object and end effector: ", distance_object_ee)
         return True
     return False
 
 def convert_numpy(obj):
+    """Convert numpy objects to standard Python types for JSON serialization."""
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, np.generic):  # es. np.float32, np.bool_
@@ -703,6 +693,7 @@ def convert_numpy(obj):
         return obj
 
 def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_target_pose, initial_object_pose, distance_object_target):
+    """Save the statistics of the simulation step to a JSON file."""
     stats = {
         "simulation_step": simulation_step,
         "initial_camera_pose": initial_camera_pose,
@@ -724,7 +715,7 @@ def save_stats(simulation_step, save_stats_file, initial_camera_pose, initial_ta
 
 
 def get_dist_object_target(env):
-    # voglio salvare se -> 
+    """Calculate the distance between the object and the target in the environment."""
     current_object_pose = env.unwrapped.scene["object"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
     current_target_pose = env.unwrapped.scene["box"].data.root_state_w[:, :7].clone().cpu().numpy().squeeze(0).astype(np.float32)
 
@@ -733,6 +724,7 @@ def get_dist_object_target(env):
 
 
 def check_valid_task(env):
+    """Check if the task is valid by ensuring the object is not too close to the target."""
     object_pos = env.unwrapped.scene["object"].data.root_state_w[:, :3].clone()
     target_pos = env.unwrapped.scene["box"].data.root_state_w[:, :3].clone()
     distance_object_target = torch.norm(object_pos - target_pos, dim=1)
@@ -743,6 +735,7 @@ def check_valid_task(env):
     return True
 
 def run_simulator(env, args_cli):
+    """Run the simulator with the specified environment and arguments."""
    
     camera = env.unwrapped.scene["camera"]
 
@@ -865,13 +858,8 @@ def run_simulator(env, args_cli):
     # close the environment
     env.close()
 
-
-
-
-
-
-
 def load_config(config_path = CONFIG_PATH):
+    """Load the configuration from a JSON file and update global variables."""
     # Load the configuration file
     if config_path.endswith(".json"):
         print("Loading config from JSON file...")
@@ -887,6 +875,7 @@ def load_config(config_path = CONFIG_PATH):
 
 
 def main():
+    """Main function to run the Franka Cube Lift Environment."""
     
     #load_config()
 

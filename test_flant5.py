@@ -8,26 +8,33 @@ model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 # Istruzione complessa
 instruction = "Put the green cube on the red area, then put the blue cube on the red area, and finally put the yellow cube on the red area."
 
+instruction = (
+    "Place the cracker_box in the brown box.\n"
+    "Then, place the tomato_can in the brown box.\n"
+    "Finally, place the school_bus in the brown box.\n"
+)
+
 prompt = (
     "Break down each instruction into simple, numbered steps.\n\n"
-    "Instruction: Put the box on the red area, then put the cup on the red area, and finally put the spoon on the red area.\n"
+    "Instruction: Place the box in the brown box, then place the cup in the brown box, and finally place the spoon in the brown box.\n"
+    "Steps:\n"
+    "1. Place the box in the brown box.\n"
+    "2. Place the cup in the brown box.\n"
+    "3. Place the spoon in the brown box.\n\n"
+    "Instruction: Place the ball in the brown box, then place the bottle in the brown box, and finally place the fork in the brown box.\n"
+    "Steps:\n"
+    "1. Place the ball in the brown box.\n"
+    "2. Place the bottle in the brown box.\n"
+    "3. Place the fork in the brown box.\n\n"
+    "Instruction: Place the fork in the brown box, then place the phone in the brown box, and finally place the paper bin in the brown box.\n"
+    "Steps:\n"
+    "1. Place the fork in the brown box.\n"
+    "2. Place the phone in the brown box.\n"
+    "3. Place the paper bin in the brown box.\n\n"
+    f"Instruction: {instruction}"
     "Steps:"
-    "1. Put the box on the red area.\n"
-    "2. Put the cup on the red area.\n"
-    "3. Put the spoon on the red area.\n\n"
-    "Instruction: Put the ball in the blue area, then put the bottle in the blue area, and finally Put the fork in the blue area.\n"
-    "Steps:"
-    "1. Put the ball in the blue area.\n"
-    "2. Put the bottle in the blue area.\n"
-    "3. Put the fork in the blue area.\n\n"
-    "Instruction: Put the fork on the red area, then put the phtone on the red area, and finally Put the paper bin on the red area.\n"
-    "Steps:"
-    "1. Put the fork on the red area.\n"
-    "2. Put the phone on the red area.\n"
-    "3. Put the paper bin on the red area.\n\n"
-    f"Instruction: {instruction}\n"
-    "Steps:"  # Prompt to generate the steps for the new instruction
 )
+
 
 
 # Tokenizza e genera l'output
