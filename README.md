@@ -9,7 +9,7 @@ Isaac Sim is an advanced simulation platform that enables creating realistic vir
 The overall workflow involves collecting data in simulation, building a robot learning dataset (RLDS) format, fine-tuning OpenVLA on that data, and then running real-time evaluation with OpenVLA controlling the simulated robot.
 
 <div style="text-align: center;">
-  <img src="figures/real_object_scenario.png" alt="Real Object Scenario" width="60%" />
+  <img src="figures/real_object_scenario.png" alt="Real Object Scenario" width="70%" />
 </div>
 
 
@@ -103,9 +103,9 @@ Where `x` specifies the scenario:
 - `-r` : real objects
 
 <div style="display: flex; gap: 10px;">
-  <img src="figures/single_cube_scenario.png" alt="Single Cube" style="width: 30%;" />
-  <img src="figures/multi_cube_scenario.png" alt="Multi Cube" style="width: 30%;" />
-  <img src="figures/real_object_scenario2.png" alt="Real Object" style="width: 30%;" />
+  <img src="figures/single_cube_scenario.png" alt="Single Cube" style="width: 25%;" />
+  <img src="figures/multi_cube_scenario.png" alt="Multi Cube" style="width: 25%;" />
+  <img src="figures/real_object_scenario2.png" alt="Real Object" style="width: 25%;" />
 </div>
 ### Evaluation
 
