@@ -105,7 +105,7 @@ Where `x` specifies the scenario:
 <div style="display: flex; gap: 10px;">
   <img src="figures/single_cube_scenario.png" alt="Single Cube" style="width: 30%;" />
   <img src="figures/multi_cube_scenario.png" alt="Multi Cube" style="width: 30%;" />
-  <img src="figures/real_object_scenario2.png" alt="Real Object" style="width: 33%;" />
+  <img src="figures/real_object_scenario2.png" alt="Real Object" style="width: 31%;" />
 </div>
 ### Evaluation
 
