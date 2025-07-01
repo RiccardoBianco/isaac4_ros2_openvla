@@ -16,9 +16,9 @@ done
 # Check if type was set
 if [[ -z "$TYPE" ]]; then
     echo "Error: You must specify either -m (multicube) or -s (singlecube) or -r (real)."
-    echo "Usage: $0 -m | -s"
+    echo "Usage: $0 -m | -s | -r"
     exit 1
 fi
 
 # Run the Isaac Lab data collection script with the chosen type
-./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/data_collection_"$TYPE".py --enable_cameras --save --headless
+./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/data_collection_"$TYPE".py --enable_cameras --save #--headless

@@ -15,7 +15,7 @@ done
 
 # Check if type was set
 if [[ -z "$TYPE" ]]; then
-    echo "Error: You must specify either -m (multicube) or -s (singlecube)."
+    echo "Error: You must specify either -m (multicube), -s (singlecube) or -r (real_objects)."
     exit 1
 fi
 

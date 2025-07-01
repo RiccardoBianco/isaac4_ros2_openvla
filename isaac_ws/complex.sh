@@ -1,1 +1,1 @@
-./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/complex_instruction_multicube.py --enable_cameras --save --headless
+./isaac_ws/isaac_lab/isaaclab.sh -p isaac_ws/src/complex_instruction_multicube.py --enable_cameras --save #--headless

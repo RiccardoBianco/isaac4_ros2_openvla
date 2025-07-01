@@ -1,0 +1,35 @@
+model {
+  file: "model.sdf"
+}
+name: "SCHOOL_BUS"
+description: "SCHOOL BUS"
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "PlanToys"
+}
+annotations {
+  key: "mpn"
+  value: "6049"
+}
+annotations {
+  key: "sku"
+  value: "0604901"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Toys"
+}

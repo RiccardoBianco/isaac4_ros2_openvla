@@ -1,0 +1,35 @@
+model {
+  file: "model.sdf"
+}
+name: "Thomas_Friends_Woodan_Railway_Henry"
+description: "Thomas & Friends Woodan Railway, Henry"
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "Fisher Price"
+}
+annotations {
+  key: "gtin"
+  value: "00746775212759"
+}
+annotations {
+  key: "sku"
+  value: "746775212759"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Toys"
+}

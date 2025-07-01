@@ -14,6 +14,13 @@ import math
 
 MULTICUBE = False
 
+if MULTICUBE:
+    BLOCK_SIZE = 800 # Number of episodes per block (per cube color)
+    TRAIN_PER_BLOCK = 750 # Number of training episodes per block
+    VAL_PER_BLOCK = 50 # Number of validation episodes per block
+else:
+    TRAIN_RATIO = 0.8 # Ratio of training data (default is 80% train, 20% val)
+
 def empty_dir(dir_path):
     if os.path.exists(dir_path):
         for filename in os.listdir(dir_path):
@@ -25,7 +32,7 @@ def empty_dir(dir_path):
     else:
         os.makedirs(dir_path)
 
-def split_dataset(input_dir, output_dir, train_ratio=1.0):
+def split_dataset(input_dir, output_dir, train_ratio=0.8):
     # Lista ordinata dei file
     all_files = sorted(os.listdir(input_dir))
     all_files = [f for f in all_files if os.path.isfile(os.path.join(input_dir, f))]
@@ -64,7 +71,7 @@ def split_dataset(input_dir, output_dir, train_ratio=1.0):
     print(f"Val: {len(val_files)} file -> {val_dir}")
 
 
-def split_dataset_taskwise(input_dir, output_dir):
+def split_dataset_taskwise(input_dir, output_dir, block_size=800, train_per_block=750, val_per_block=50):
     all_files = sorted(os.listdir(input_dir))
     all_files = [f for f in all_files if f.endswith(".npy") and os.path.isfile(os.path.join(input_dir, f))]
 
@@ -77,10 +84,6 @@ def split_dataset_taskwise(input_dir, output_dir):
     val_dir = os.path.join(output_dir, 'val')
     empty_dir(train_dir)
     empty_dir(val_dir)
-
-    block_size = 800
-    train_per_block = 750
-    val_per_block = 50
 
     total_blocks = len(all_files) // block_size
 
@@ -106,9 +109,13 @@ if __name__ == "__main__":
     output_dir = "./rlds_dataset_builder/sim_data_custom_v0/data"  # Sostituisci con il tuo percorso
     if MULTICUBE:
         # Split dataset into train and val
-        split_dataset_taskwise(input_dir, output_dir)
+        split_dataset_taskwise(input_dir, output_dir, 
+                               block_size=BLOCK_SIZE, 
+                               train_per_block=TRAIN_PER_BLOCK, 
+                               val_per_block=VAL_PER_BLOCK)
     else:
         # Split dataset into train and val
-        split_dataset(input_dir, output_dir)
+        split_dataset(input_dir, output_dir, 
+                      train_ratio=TRAIN_RATIO)
 
 

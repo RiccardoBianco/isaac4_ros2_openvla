@@ -91,4 +91,4 @@ openvla/vla-scripts/server_side_images/*
 
 logs/
 
-assets/
+# assets/
